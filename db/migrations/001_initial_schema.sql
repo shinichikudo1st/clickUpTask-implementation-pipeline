@@ -1,0 +1,2 @@
+-- ClickUp task snapshots, webhook events, milestone generations (Phase 2).
+-- See ClickUpMilestonePlannerMilestone.md for full DDL.
