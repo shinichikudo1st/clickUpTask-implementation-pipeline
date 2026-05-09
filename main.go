@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/config"
+	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/db"
 	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/handlers"
 	appmiddleware "github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/middleware"
 	"github.com/go-chi/chi/v5"
@@ -22,6 +23,14 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
+	database, err := db.Connect(context.Background(), cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("database: %v", err)
+	}
+	if database != nil {
+		defer func() { _ = database.Close() }()
+	}
+
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID)
 	router.Use(middleware.RealIP)
@@ -29,7 +38,7 @@ func main() {
 	router.Use(appmiddleware.RequestLogger)
 	router.Use(middleware.Timeout(60 * time.Second))
 
-	router.Get("/v1/health", handlers.HealthHandler)
+	router.Get("/v1/health", handlers.HealthHandler(database))
 	router.NotFound(handlers.NotFoundHandler)
 	router.MethodNotAllowed(handlers.MethodNotAllowedHandler)
 

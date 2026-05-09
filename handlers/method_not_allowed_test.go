@@ -12,7 +12,7 @@ import (
 
 func TestMethodNotAllowedHandler(t *testing.T) {
 	router := chi.NewRouter()
-	router.Get("/v1/health", HealthHandler)
+	router.Get("/v1/health", HealthHandler(nil))
 	router.MethodNotAllowed(MethodNotAllowedHandler)
 
 	recorder := httptest.NewRecorder()

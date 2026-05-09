@@ -17,6 +17,7 @@ const minAPISecretLen = 8
 type Config struct {
 	Port        string
 	APISecret   string
+	DatabaseURL string
 	SupabaseURL string
 	SupabaseKey string
 	Bucket      string
@@ -55,6 +56,7 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		Port:                 port,
 		APISecret:            strings.TrimSpace(os.Getenv("API_SECRET")),
+		DatabaseURL:          strings.TrimSpace(os.Getenv("DATABASE_URL")),
 		SupabaseURL:          strings.TrimSpace(os.Getenv("SUPABASE_URL")),
 		SupabaseKey:          strings.TrimSpace(os.Getenv("SUPABASE_SERVICE_ROLE_KEY")),
 		Bucket:               strings.TrimSpace(os.Getenv("SUPABASE_STORAGE_BUCKET")),
@@ -98,7 +100,30 @@ func Load() (*Config, error) {
 		}
 	}
 
+	if cfg.DatabaseURL != "" {
+		if err := validateDatabaseTLS(cfg.DatabaseURL); err != nil {
+			return nil, err
+		}
+	}
+
 	return cfg, nil
+}
+
+func validateDatabaseTLS(databaseURL string) error {
+	dbLower := strings.ToLower(databaseURL)
+
+	if strings.Contains(dbLower, "sslmode=disable") || strings.Contains(dbLower, "sslmode=allow") {
+		return errors.New("DATABASE_URL must not use sslmode=disable or sslmode=allow; use sslmode=require or sslmode=verify-*")
+	}
+
+	if strings.Contains(dbLower, "sslmode=require") {
+		return nil
+	}
+	if strings.Contains(dbLower, "sslmode=verify-") {
+		return nil
+	}
+
+	return errors.New("DATABASE_URL must include sslmode=require (or sslmode=verify-*) for Supabase connections")
 }
 
 func validatePort(port string) error {

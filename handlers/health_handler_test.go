@@ -15,7 +15,7 @@ func TestHealthHandler(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/v1/health", nil)
 
-	HealthHandler(recorder, request)
+	HealthHandler(nil)(recorder, request)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status: got %d want %d", recorder.Code, http.StatusOK)
@@ -37,5 +37,8 @@ func TestHealthHandler(t *testing.T) {
 	}
 	if data["service"] != serviceName {
 		t.Fatalf("service: got %v want %s", data["service"], serviceName)
+	}
+	if data["database"] != "not_configured" {
+		t.Fatalf("database: got %v", data["database"])
 	}
 }

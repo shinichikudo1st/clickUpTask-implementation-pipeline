@@ -139,6 +139,39 @@ func TestLoad_AppBaseURLInvalidScheme(t *testing.T) {
 	}
 }
 
+func TestLoad_DatabaseURLDisallowSSLDisable(t *testing.T) {
+	t.Setenv("API_SECRET", "longenough")
+	t.Setenv("DATABASE_URL", "postgres://u:p@host:5432/db?sslmode=disable")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestLoad_DatabaseURLRequiresSSLMode(t *testing.T) {
+	t.Setenv("API_SECRET", "longenough")
+	t.Setenv("DATABASE_URL", "postgres://u:p@host:5432/db")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestLoad_DatabaseURLAcceptRequire(t *testing.T) {
+	t.Setenv("API_SECRET", "longenough")
+	t.Setenv("DATABASE_URL", "postgres://u:p@host:5432/db?sslmode=require")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DatabaseURL == "" {
+		t.Fatal("expected database URL")
+	}
+}
+
 func TestLoad_TrimsWhitespace(t *testing.T) {
 	t.Setenv("API_SECRET", "  longenough  ")
 	t.Setenv("PORT", "  9090  ")
