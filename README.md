@@ -2,17 +2,20 @@
 
 Go service that turns new ClickUp assignments into ApexSuite-style milestone `.md` plans, persists metadata (Supabase), and emails the result. See `../ClickUpMilestonePlannerMilestone.md` for the full plan.
 
-## Phase 0 (current)
+## Phase 0–1 (current)
 
-Runnable HTTP skeleton: Chi router, `GET /v1/health`, no external dependencies.
+- **Phase 0:** Chi router, `GET /v1/health`, repo layout, Docker, CI.
+- **Phase 1:** `config.Load()` (godotenv + validation), structured JSON request logs (with request ID), JSON panic recovery, ApexSuite response helpers, `404` / `405` handlers, graceful shutdown.
 
 ## Requirements
 
 - Go 1.22+
+- **API_SECRET** (at least 8 characters) in the environment before `go run .` (see `.env.example`). Optional: put values in `.env` in the repo root; `godotenv` loads it automatically when present.
 
 ## Run locally
 
 ```bash
+set API_SECRET=local-dev-secret-at-least-8-chars
 go run .
 ```
 

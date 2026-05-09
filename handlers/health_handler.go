@@ -1,26 +1,27 @@
 package handlers
 
 import (
-	"encoding/json"
 	"net/http"
 	"time"
-
-	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/models"
 )
 
 const serviceName = "clickup-milestone-planner-service"
 
-// HealthHandler returns 200 with service metadata. No external dependencies (Phase 0).
+// HealthHandler returns 200 with service metadata. No external dependencies.
 func HealthHandler(responseWriter http.ResponseWriter, _ *http.Request) {
-	responseWriter.Header().Set("Content-Type", "application/json")
-	responseWriter.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(responseWriter).Encode(models.SuccessResponse{
-		Success: true,
-		Data: map[string]string{
-			"status":    "ok",
-			"service":   serviceName,
-			"timestamp": time.Now().UTC().Format(time.RFC3339),
-		},
-		Error: nil,
+	WriteJSONSuccess(responseWriter, http.StatusOK, map[string]string{
+		"status":    "ok",
+		"service":   serviceName,
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+// NotFoundHandler returns a structured 404 for unknown routes.
+func NotFoundHandler(responseWriter http.ResponseWriter, _ *http.Request) {
+	WriteJSONError(responseWriter, http.StatusNotFound, "NOT_FOUND", "route not found")
+}
+
+// MethodNotAllowedHandler returns a structured 405 for unsupported methods.
+func MethodNotAllowedHandler(responseWriter http.ResponseWriter, _ *http.Request) {
+	WriteJSONError(responseWriter, http.StatusMethodNotAllowed, "VALIDATION_ERROR", "method not allowed")
 }
