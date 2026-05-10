@@ -122,6 +122,12 @@ func TestValidateGeneratedMarkdown_secrets(t *testing.T) {
 	if err := ValidateGeneratedMarkdown(base + "\nBearer abcdefghijklmnopqrstuvwxyz0123456789"); err == nil {
 		t.Fatal("expected bearer rejection")
 	}
+	if err := ValidateGeneratedMarkdown(base + "\n-----BEGIN RSA PRIVATE KEY-----\nMII"); err == nil {
+		t.Fatal("expected PEM private key rejection")
+	}
+	if err := ValidateGeneratedMarkdown(base + "\nAKIA0123456789ABCDEF"); err == nil {
+		t.Fatal("expected AWS access key id rejection")
+	}
 }
 
 func TestStripMarkdownFences(t *testing.T) {

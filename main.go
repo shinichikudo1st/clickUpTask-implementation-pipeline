@@ -12,6 +12,7 @@ import (
 	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/config"
 	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/db"
 	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/handlers"
+	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/internal/safelog"
 	appmiddleware "github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/middleware"
 	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/services"
 	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/services/storage"
@@ -22,12 +23,12 @@ import (
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("config: %v", err)
+		log.Fatalf("config: %s", safelog.Redact(err.Error()))
 	}
 
 	database, err := db.Connect(context.Background(), cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("database: %v", err)
+		log.Fatalf("database: %s", safelog.Redact(err.Error()))
 	}
 	if database != nil {
 		defer func() { _ = database.Close() }()
@@ -45,7 +46,7 @@ func main() {
 		p, err := services.TryNewPlanner(cfg, store)
 		switch {
 		case err != nil:
-			log.Printf("milestone planner disabled: %v", err)
+			log.Printf("milestone planner disabled: %s", safelog.Redact(err.Error()))
 		case p != nil:
 			milestonePlanner = p
 			log.Print("milestone planner enabled: new assignment webhooks run the full pipeline asynchronously (ClickUp → LLM → storage → email)")
@@ -57,7 +58,7 @@ func main() {
 	var taskAPIBlobs storage.BlobStore
 	if store != nil {
 		if b, err := storage.NewFromConfig(cfg); err != nil {
-			log.Printf("task API: signed download URLs on GET /v1/tasks/.../plan unavailable: %v", err)
+			log.Printf("task API: signed download URLs on GET /v1/tasks/.../plan unavailable: %s", safelog.Redact(err.Error()))
 		} else {
 			taskAPIBlobs = b
 		}
@@ -84,14 +85,14 @@ func main() {
 	go func() {
 		log.Printf("clickup-task-implementation-pipeline listening on :%s", cfg.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server: %v", err)
+			log.Fatalf("server: %s", safelog.Redact(err.Error()))
 		}
 	}()
 
 	if cfg.ClickUpPollerEnabled && cfg.ClickUpPollIntervalSec > 0 && store != nil && milestonePlanner != nil {
 		cu, err := services.NewClickUpClient(cfg)
 		if err != nil {
-			log.Printf("poller ticker: disabled (clickup client: %v)", err)
+			log.Printf("poller ticker: disabled (clickup client: %s)", safelog.Redact(err.Error()))
 		} else {
 			interval := time.Duration(cfg.ClickUpPollIntervalSec) * time.Second
 			log.Printf("poller ticker: every %s (CLICKUP_POLL_INTERVAL_SECONDS)", interval)
@@ -103,7 +104,7 @@ func main() {
 					stats, err := services.RunPollCycle(ctx, cfg, store, cu, milestonePlanner)
 					cancel()
 					if err != nil {
-						log.Printf("poller tick: %v", err)
+						log.Printf("poller tick: %s", safelog.Redact(err.Error()))
 						continue
 					}
 					if stats.Listed > 0 || stats.Runs > 0 || stats.GenerationFailures > 0 {
@@ -122,6 +123,6 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Printf("shutdown: %v", err)
+		log.Printf("shutdown: %s", safelog.Redact(err.Error()))
 	}
 }

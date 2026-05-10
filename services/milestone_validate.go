@@ -17,6 +17,8 @@ var (
 	reLongHex     = regexp.MustCompile(`\b[0-9a-fA-F]{40,}\b`)
 	reJWT         = regexp.MustCompile(`eyJ[a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-]+`)
 	reSupabaseSRV = regexp.MustCompile(`(?i)service_role|supabase.*key`)
+	rePEMKey      = regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----`)
+	reAWSKey      = regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`)
 )
 
 // ValidateGeneratedMarkdown checks structure and rejects secret-like content.
@@ -71,6 +73,12 @@ func scanSecrets(md string) error {
 	}
 	if reSupabaseSRV.MatchString(md) && reLongHex.MatchString(md) {
 		return fmt.Errorf("output may contain a Supabase/service credential pattern")
+	}
+	if rePEMKey.MatchString(md) {
+		return fmt.Errorf("output looks like it contains a PEM private key block")
+	}
+	if reAWSKey.MatchString(md) {
+		return fmt.Errorf("output looks like it contains an AWS access key id")
 	}
 	// Long hex alone can be false positive; only flag if line looks like KEY=value
 	for _, line := range strings.Split(md, "\n") {

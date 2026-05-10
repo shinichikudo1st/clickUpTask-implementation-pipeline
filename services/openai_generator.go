@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/config"
+	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/internal/safelog"
 	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/models"
 )
 
@@ -66,6 +67,7 @@ func NewOpenAIGenerator(cfg *config.Config) (*OpenAIGenerator, error) {
 var _ Generator = (*OpenAIGenerator)(nil)
 
 // Generate calls the LLM and returns validated plan metadata.
+// Prompts and request bodies are not logged; upstream error snippets are redacted.
 func (g *OpenAIGenerator) Generate(ctx context.Context, task models.TaskContext) (*GeneratedMilestonePlan, error) {
 	taskJSON, err := taskContextJSONForPrompt(task)
 	if err != nil {
@@ -107,7 +109,8 @@ func (g *OpenAIGenerator) Generate(ctx context.Context, task models.TaskContext)
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("openai chat completions: status %d: %s", resp.StatusCode, truncateForErr(string(body), 512))
+		snippet := safelog.Redact(truncateForErr(string(body), 512))
+		return nil, fmt.Errorf("openai chat completions: status %d: %s", resp.StatusCode, snippet)
 	}
 	var parsed chatCompletionResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {

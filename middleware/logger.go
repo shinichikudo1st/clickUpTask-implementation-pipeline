@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/internal/safelog"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
@@ -72,7 +73,7 @@ func RequestLogger(next http.Handler) http.Handler {
 
 		encoded, err := json.Marshal(payload)
 		if err != nil {
-			log.Printf(`{"level":"error","event":"log_marshal_failed","request_id":"%s","message":%q}`, requestID, err.Error())
+			log.Printf(`{"level":"error","event":"log_marshal_failed","request_id":"%s","message":%q}`, requestID, safelog.Redact(err.Error()))
 			return
 		}
 		log.Println(string(encoded))

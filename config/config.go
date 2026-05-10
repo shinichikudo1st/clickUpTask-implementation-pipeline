@@ -51,7 +51,7 @@ type Config struct {
 	// Phase 6: object storage for generated markdown (local dir or Supabase Storage).
 	StorageBackend      string // STORAGE_BACKEND: local | supabase | empty (see storage.NewFromConfig)
 	StorageLocalDir     string // STORAGE_LOCAL_DIR: writable directory for local backend
-	SignedURLTTLSeconds int    // SIGNED_URL_TTL_SECONDS: signed URL lifetime (Supabase), default 3600
+	SignedURLTTLSeconds int    // SIGNED_URL_TTL_SECONDS: signed URL lifetime (Supabase); 0 → default 900s
 }
 
 // Load reads configuration from the process environment. Optional values are
@@ -249,11 +249,11 @@ func (c *Config) MaxEmailAttachmentBytes() int {
 	return c.EmailMaxAttachmentBytes
 }
 
-// SignedURLTTL returns a bounded TTL for storage signed URLs (default 1h, min 1m, max 7d).
+// SignedURLTTL returns a bounded TTL for storage signed URLs (default 15m, min 1m, max 7d).
 func (c *Config) SignedURLTTL() time.Duration {
 	s := c.SignedURLTTLSeconds
 	if s <= 0 {
-		s = 3600
+		s = 900
 	}
 	const minSec, maxSec = 60, 604800
 	if s < minSec {

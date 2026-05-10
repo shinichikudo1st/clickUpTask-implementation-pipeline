@@ -213,7 +213,7 @@ func TestLoad_InvalidStorageBackend(t *testing.T) {
 }
 
 func TestSignedURLTTL_clamp(t *testing.T) {
-	if (&Config{SignedURLTTLSeconds: 0}).SignedURLTTL() != time.Hour {
+	if (&Config{SignedURLTTLSeconds: 0}).SignedURLTTL() != 900*time.Second {
 		t.Fatalf("default TTL")
 	}
 	if (&Config{SignedURLTTLSeconds: 30}).SignedURLTTL() != time.Minute {

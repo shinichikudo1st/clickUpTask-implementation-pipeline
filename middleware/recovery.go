@@ -8,6 +8,7 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/internal/safelog"
 	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/models"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -54,6 +55,8 @@ func Recovery(next http.Handler) http.Handler {
 			if len(panicStr) > maxPanicLogLen {
 				panicStr = panicStr[:maxPanicLogLen] + "…"
 			}
+			panicStr = safelog.Redact(panicStr)
+			stack := safelog.Redact(string(debug.Stack()))
 
 			logPayload := map[string]interface{}{
 				"level":      "error",
@@ -62,7 +65,7 @@ func Recovery(next http.Handler) http.Handler {
 				"method":     request.Method,
 				"path":       request.URL.Path,
 				"panic":      panicStr,
-				"stack":      string(debug.Stack()),
+				"stack":      stack,
 			}
 			encoded, err := json.Marshal(logPayload)
 			if err != nil {
