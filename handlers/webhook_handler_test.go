@@ -343,6 +343,43 @@ func TestClickUpWebhook_duplicateReplay(t *testing.T) {
 	}
 }
 
+func TestClickUpWebhook_taskCreatedSkippedWhenAssigneeFilterSet(t *testing.T) {
+	t.Parallel()
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	store := db.NewStore(sqlDB)
+	cfg := testWebhookConfig("whsec", "184")
+
+	body := []byte(`{"event":"taskCreated","webhook_id":"w","task_id":"t1","history_items":[{"id":"h1"}]}`)
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/webhooks/clickup", bytes.NewReader(body))
+	req.Header.Set("X-Signature", signClickUpWebhook("whsec", body))
+
+	ClickUpWebhookHandler(cfg, store)(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status: %d", recorder.Code)
+	}
+	var env struct {
+		Data struct {
+			Accepted bool   `json:"accepted"`
+			Reason   string `json:"reason"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(recorder.Body).Decode(&env); err != nil {
+		t.Fatal(err)
+	}
+	if env.Data.Accepted || env.Data.Reason != "assignee_scope_skip_task_created" {
+		t.Fatalf("data: %+v", env.Data)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestClickUpWebhook_assigneeFilterRejects(t *testing.T) {
 	t.Parallel()
 	sqlDB, mock, err := sqlmock.New()

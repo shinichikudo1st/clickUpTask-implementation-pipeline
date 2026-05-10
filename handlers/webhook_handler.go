@@ -79,6 +79,12 @@ func ClickUpWebhookHandler(cfg *config.Config, store *db.Store, planner ...Miles
 
 		assigneeFilter := strings.TrimSpace(cfg.ClickUpAssigneeID)
 		if assigneeFilter != "" {
+			// When filtering to a single user, only react to assignee changes — not taskCreated
+			// (creation does not prove the task is assigned to that user yet).
+			if payload.Event == "taskCreated" {
+				writeWebhookAccepted(responseWriter, false, "assignee_scope_skip_task_created", uuid.Nil, false)
+				return
+			}
 			switch payload.Event {
 			case "taskAssigneeUpdated", "taskUpdated":
 				if !clickupwebhook.AssigneeAddMatchesUser(raw, assigneeFilter) {

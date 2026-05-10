@@ -35,7 +35,7 @@ Go service that turns new ClickUp assignments into ApexSuite-style milestone `.m
 2. **Env vars** in `.env` (or deployment secrets):
    - **`DATABASE_URL`** — required for webhooks (handler returns `503` if the DB pool is not configured).
    - **`CLICKUP_WEBHOOK_SECRET`** — the `secret` returned when you **create the webhook** in ClickUp (Settings → Integrations → Webhooks, or [Create Webhook API](https://developer.clickup.com/reference/createwebhook)). Without it, the endpoint returns **`401`**.
-   - **`CLICKUP_ASSIGNEE_USER_ID`** (optional) — your ClickUp **user id** as a string (e.g. `184`). When set, only `taskAssigneeUpdated` / `taskUpdated` events where an `assignee_add` history item’s `after.id` matches this user are accepted; `taskCreated` is not filtered by assignee.
+   - **`CLICKUP_ASSIGNEE_USER_ID`** (optional) — your ClickUp **user id** as a string (e.g. `184`). When set, **`taskCreated` is ignored** for milestone generation (tasks created unassigned or assigned to someone else won’t run). Only **`taskAssigneeUpdated`** and **`taskUpdated`** with an `assignee_add` whose `after.id` matches this user are accepted. When unset, **`taskCreated`** is still accepted like before.
 3. **Create the webhook** in ClickUp for the Space/List you care about. Subscribe at least to: **`taskCreated`**, **`taskAssigneeUpdated`**, and optionally **`taskUpdated`** (assignee-only updates are detected via `history_items`).
 4. Set the webhook **endpoint** to `https://<your-host>/v1/webhooks/clickup` and save. ClickUp will send **`POST`** with **`Content-Type: application/json`** and **`X-Signature`**.
 5. **Smoke test:** assign yourself a task (or create one). Check `clickup_events` in Supabase for a new row. Successful responses look like:
