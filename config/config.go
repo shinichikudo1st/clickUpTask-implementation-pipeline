@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -39,6 +40,11 @@ type Config struct {
 	EmailTo       string
 
 	AppBaseURL string
+
+	// Phase 6: object storage for generated markdown (local dir or Supabase Storage).
+	StorageBackend      string // STORAGE_BACKEND: local | supabase | empty (see storage.NewFromConfig)
+	StorageLocalDir     string // STORAGE_LOCAL_DIR: writable directory for local backend
+	SignedURLTTLSeconds int    // SIGNED_URL_TTL_SECONDS: signed URL lifetime (Supabase), default 3600
 }
 
 // Load reads configuration from the process environment. Optional values are
@@ -76,6 +82,9 @@ func Load() (*Config, error) {
 		EmailFrom:            strings.TrimSpace(os.Getenv("EMAIL_FROM")),
 		EmailTo:              strings.TrimSpace(os.Getenv("EMAIL_TO")),
 		AppBaseURL:           strings.TrimSpace(os.Getenv("APP_BASE_URL")),
+		StorageBackend:       strings.TrimSpace(os.Getenv("STORAGE_BACKEND")),
+		StorageLocalDir:      strings.TrimSpace(os.Getenv("STORAGE_LOCAL_DIR")),
+		SignedURLTTLSeconds:  intFromEnv("SIGNED_URL_TTL_SECONDS", 0),
 	}
 
 	if cfg.APISecret == "" {
@@ -122,7 +131,57 @@ func Load() (*Config, error) {
 		}
 	}
 
+	if cfg.StorageBackend != "" {
+		switch strings.ToLower(cfg.StorageBackend) {
+		case "local", "supabase", "auto":
+		default:
+			return nil, fmt.Errorf("STORAGE_BACKEND must be local, supabase, or auto, got %q", cfg.StorageBackend)
+		}
+	}
+
+	if cfg.StorageLocalDir != "" {
+		if err := validateLocalStorageDir(cfg.StorageLocalDir); err != nil {
+			return nil, err
+		}
+	}
+
 	return cfg, nil
+}
+
+func intFromEnv(key string, defaultVal int) int {
+	s := strings.TrimSpace(os.Getenv(key))
+	if s == "" {
+		return defaultVal
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return defaultVal
+	}
+	return n
+}
+
+func validateLocalStorageDir(dir string) error {
+	// Reject obvious traversal; OS will still enforce real paths at runtime.
+	if strings.Contains(dir, "..") {
+		return errors.New("STORAGE_LOCAL_DIR must not contain '..'")
+	}
+	return nil
+}
+
+// SignedURLTTL returns a bounded TTL for storage signed URLs (default 1h, min 1m, max 7d).
+func (c *Config) SignedURLTTL() time.Duration {
+	s := c.SignedURLTTLSeconds
+	if s <= 0 {
+		s = 3600
+	}
+	const minSec, maxSec = 60, 604800
+	if s < minSec {
+		s = minSec
+	}
+	if s > maxSec {
+		s = maxSec
+	}
+	return time.Duration(s) * time.Second
 }
 
 func validateDatabaseTLS(databaseURL string) error {

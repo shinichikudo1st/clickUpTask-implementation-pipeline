@@ -2,7 +2,7 @@
 
 Go service that turns new ClickUp assignments into ApexSuite-style milestone `.md` plans, persists metadata (Supabase), and emails the result. See `../ClickUpMilestonePlannerMilestone.md` for the full plan.
 
-## Phase 0–5 (current)
+## Phase 0–6 (current)
 
 - **Phase 0:** Chi router, `GET /v1/health`, repo layout, Docker, CI.
 - **Phase 1:** `config.Load()` (godotenv + validation), structured JSON request logs (with request ID), JSON panic recovery, ApexSuite response helpers, `404` / `405` handlers, graceful shutdown.
@@ -10,6 +10,13 @@ Go service that turns new ClickUp assignments into ApexSuite-style milestone `.m
 - **Phase 3:** `POST /v1/webhooks/clickup` — verifies ClickUp `X-Signature` (HMAC-SHA256 hex of raw body), filters assignment-related events, dedupes by `webhook_id:history_item_id` (or body hash), inserts into `clickup_events`.
 - **Phase 4:** `services.ClickUpClient` — `GetTask` / `GetTaskComments` against ClickUp API v2 (`CLICKUP_API_TOKEN`, optional `CLICKUP_API_BASE_URL`), 30s HTTP timeout, maps 401/403/404/429 to `ClickUpHTTPError`, normalizes to `models.TaskContext`.
 - **Phase 5:** `services.Generator` + `OpenAIGenerator` — embedded prompt (`services/prompts/milestone_prompt.md`), OpenAI Chat Completions (`LLM_API_KEY`, `LLM_MODEL`, optional `LLM_PROVIDER=openai`, optional `LLM_API_BASE_URL`), post-process (CRLF normalize, strip optional ` ```markdown ` fences), section + secret heuristics validation, SHA-256 via `internal/checksum`, filename `{taskId}-{slug}-milestone.md` (`internal/slug`).
+- **Phase 6:** `services/storage` — `BlobStore` (`Upload` / `Download` / `SignedDownloadURL`), `SupabaseBlobStore` (Storage REST, `text/markdown`, `x-upsert`), `LocalBlobStore` (under `STORAGE_LOCAL_DIR`), `NewFromConfig`, `PersistMilestone` (upload then `MarkGenerationCompleted`; upload errors call `MarkGenerationFailed`). Bucket defaults to **`milestone-plans`** when `SUPABASE_STORAGE_BUCKET` is unset. Signed URL TTL: `SIGNED_URL_TTL_SECONDS` (default 3600, clamped 60–604800).
+
+### Supabase Storage bucket (Phase 6)
+
+1. In Supabase: **Storage** → **New bucket** → id **`milestone-plans`** (private is fine; the service uses the **service role** key server-side).
+2. Set **`SUPABASE_URL`**, **`SUPABASE_SERVICE_ROLE_KEY`**, and optionally **`SUPABASE_STORAGE_BUCKET`** (defaults to `milestone-plans`).
+3. For local dev without Supabase Storage, set **`STORAGE_BACKEND=local`** and **`STORAGE_LOCAL_DIR`** to a writable directory (see `.env.example`). Local backend does not support signed URLs (`ErrSignedURLUnsupported`); use `Download` or a future app route.
 
 ### Supabase migration (Phase 2)
 

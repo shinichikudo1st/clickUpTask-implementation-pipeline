@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoad_MissingAPISecret(t *testing.T) {
@@ -195,5 +196,30 @@ func TestLoad_TrimsWhitespace(t *testing.T) {
 	}
 	if cfg.Port != "9090" {
 		t.Fatalf("Port: %q", cfg.Port)
+	}
+}
+
+func TestLoad_InvalidStorageBackend(t *testing.T) {
+	t.Setenv("API_SECRET", "longenough")
+	t.Setenv("STORAGE_BACKEND", "s3")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "STORAGE_BACKEND") {
+		t.Fatalf("error: %v", err)
+	}
+}
+
+func TestSignedURLTTL_clamp(t *testing.T) {
+	if (&Config{SignedURLTTLSeconds: 0}).SignedURLTTL() != time.Hour {
+		t.Fatalf("default TTL")
+	}
+	if (&Config{SignedURLTTLSeconds: 30}).SignedURLTTL() != time.Minute {
+		t.Fatalf("min clamp")
+	}
+	if (&Config{SignedURLTTLSeconds: 9999999}).SignedURLTTL() != 604800*time.Second {
+		t.Fatalf("max clamp")
 	}
 }
