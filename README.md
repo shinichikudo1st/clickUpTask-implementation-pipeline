@@ -95,6 +95,21 @@ go run ./cmd/poll-milestones
 
 For a repeating in-process poll, set **`CLICKUP_POLL_INTERVAL_SECONDS`** to **30** or higher and start **`go run .`** (ticker runs only when the milestone planner is enabled).
 
+### Repository integration test (Phase 12)
+
+Integration tests in `test/integration` use a real Postgres database through `TEST_DATABASE_URL`:
+
+```bash
+set TEST_DATABASE_URL=postgres://user:pass@localhost:5432/apexsuite_test?sslmode=disable
+go test ./test/integration -count=1
+```
+
+Notes:
+
+- Tests auto-create required tables/indexes if missing.
+- Tests truncate the project tables before/after each run.
+- For safety, tests skip unless `TEST_DATABASE_URL` contains `test`.
+
 ## Run locally
 
 ```bash
@@ -128,3 +143,37 @@ docker compose up --build
 ## Layout
 
 Packages match the milestone layout (`handlers`, `config`, `db`, `middleware`, `models`, `services`, `internal`, `templates`, `test`). The canonical LLM prompt is `services/prompts/milestone_prompt.md` (embedded at build time); `templates/milestone_prompt.md` points to it.
+
+## Architecture (V1)
+
+The pipeline is deterministic and async:
+
+1. ClickUp webhook or poller identifies a task.
+2. Service fetches normalized task context from ClickUp.
+3. Planner creates a generation row and calls the LLM generator.
+4. Markdown is validated and uploaded to storage.
+5. Generation metadata is updated and email is delivered (attachment or link).
+
+Core components:
+
+- `handlers` for webhook/manual HTTP entry points.
+- `services` for ClickUp API, generation, orchestration, storage, email, and poller.
+- `db.Store` as repository for tasks/events/generations/poller state.
+- `middleware` for auth, request logging, and panic recovery.
+
+## HTTP Endpoints
+
+- `GET /v1/health`: service health (and DB state when configured).
+- `POST /v1/webhooks/clickup`: ClickUp webhook intake (signature validated).
+- `POST /v1/tasks/{clickup_task_id}/generate`: authenticated manual async generation (`?force=true` optional).
+- `GET /v1/tasks/{clickup_task_id}/plan`: authenticated latest generation status + signed URL when available.
+
+## Environment Variables
+
+Use `.env.example` as the source of truth. Typical minimum set:
+
+- Core: `API_SECRET`, `PORT` (optional), `DATABASE_URL`.
+- ClickUp: `CLICKUP_API_TOKEN`, `CLICKUP_WEBHOOK_SECRET`, `CLICKUP_TEAM_ID`, `CLICKUP_ASSIGNEE_USER_ID`.
+- LLM: `LLM_API_KEY`, `LLM_MODEL` (optional), `LLM_API_BASE_URL` (optional).
+- Storage: `STORAGE_BACKEND`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, `SIGNED_URL_TTL_SECONDS`.
+- Email: `EMAIL_PROVIDER`, `EMAIL_API_KEY`, `EMAIL_FROM`, `EMAIL_TO`.

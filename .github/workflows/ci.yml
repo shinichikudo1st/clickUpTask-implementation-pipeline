@@ -21,4 +21,4 @@ jobs:
       - name: Test
         run: go test ./... -count=1
       - name: Build
-        run: go build -o /dev/null .
+        run: go build ./...
