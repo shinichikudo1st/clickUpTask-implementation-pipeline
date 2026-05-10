@@ -2,13 +2,14 @@
 
 Go service that turns new ClickUp assignments into ApexSuite-style milestone `.md` plans, persists metadata (Supabase), and emails the result. See `../ClickUpMilestonePlannerMilestone.md` for the full plan.
 
-## Phase 0–4 (current)
+## Phase 0–5 (current)
 
 - **Phase 0:** Chi router, `GET /v1/health`, repo layout, Docker, CI.
 - **Phase 1:** `config.Load()` (godotenv + validation), structured JSON request logs (with request ID), JSON panic recovery, ApexSuite response helpers, `404` / `405` handlers, graceful shutdown.
 - **Phase 2:** `DATABASE_URL` (optional) with TLS validation, `db/migrations/001_initial_schema.sql`, `db.Connect` pool, `db.Store` repository (tasks, events, generations), health checks DB when configured.
 - **Phase 3:** `POST /v1/webhooks/clickup` — verifies ClickUp `X-Signature` (HMAC-SHA256 hex of raw body), filters assignment-related events, dedupes by `webhook_id:history_item_id` (or body hash), inserts into `clickup_events`.
 - **Phase 4:** `services.ClickUpClient` — `GetTask` / `GetTaskComments` against ClickUp API v2 (`CLICKUP_API_TOKEN`, optional `CLICKUP_API_BASE_URL`), 30s HTTP timeout, maps 401/403/404/429 to `ClickUpHTTPError`, normalizes to `models.TaskContext`.
+- **Phase 5:** `services.Generator` + `OpenAIGenerator` — embedded prompt (`services/prompts/milestone_prompt.md`), OpenAI Chat Completions (`LLM_API_KEY`, `LLM_MODEL`, optional `LLM_PROVIDER=openai`, optional `LLM_API_BASE_URL`), post-process (CRLF normalize, strip optional ` ```markdown ` fences), section + secret heuristics validation, SHA-256 via `internal/checksum`, filename `{taskId}-{slug}-milestone.md` (`internal/slug`).
 
 ### Supabase migration (Phase 2)
 
@@ -34,6 +35,27 @@ Go service that turns new ClickUp assignments into ApexSuite-style milestone `.m
 
 - Go 1.22+
 - **API_SECRET** (at least 8 characters) in the environment before `go run .` (see `.env.example`). Optional: put values in `.env` in the repo root; `godotenv` loads it automatically when present.
+
+## Manual LLM smoke test (real OpenAI call)
+
+Uses `LLM_API_KEY` (and optional `LLM_MODEL`, `LLM_API_BASE_URL`) from `.env` or the environment. This spends a small amount of API credit and verifies prompts, truncation, and markdown validation against the live model.
+
+**Option A — JSON task context** (copy and edit `test/fixtures/smoke_task_context.example.json`):
+
+```bash
+go run ./cmd/smoke-llm -context path/to/your-task.json
+go run ./cmd/smoke-llm -context path/to/your-task.json -out milestone.md
+```
+
+**Option B — fetch a real ClickUp task** (`CLICKUP_API_TOKEN` in `.env`):
+
+```bash
+go run ./cmd/smoke-llm -clickup-task YOUR_TASK_ID
+go run ./cmd/smoke-llm -clickup-task YOUR_TASK_ID -comments
+go run ./cmd/smoke-llm -clickup-task YOUR_TASK_ID -dump-context > task-context.json
+```
+
+Metadata (model, filename, sha256) is printed to **stderr**; the markdown body goes to **stdout** unless `-out` is set.
 
 ## Run locally
 
@@ -67,4 +89,4 @@ docker compose up --build
 
 ## Layout
 
-Stub packages match the milestone layout (`handlers`, `config`, `db`, `middleware`, `models`, `services`, `internal`, `templates`, `test`). Phase 1+ fills behavior.
+Packages match the milestone layout (`handlers`, `config`, `db`, `middleware`, `models`, `services`, `internal`, `templates`, `test`). The canonical LLM prompt is `services/prompts/milestone_prompt.md` (embedded at build time); `templates/milestone_prompt.md` points to it.

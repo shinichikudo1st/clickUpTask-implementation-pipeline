@@ -1,3 +1,7 @@
-# Milestone prompt template
+# Milestone prompt
 
-Content will be finalized in Phase 5. The Go service will load this file (or embedded copy) to build the LLM prompt alongside ClickUp task context.
+The canonical prompt used at build time is:
+
+**`services/prompts/milestone_prompt.md`**
+
+It is embedded into the Go binary (`go:embed`). Edit that file to change LLM behavior, then rebuild the service.

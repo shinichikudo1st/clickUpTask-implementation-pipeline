@@ -28,9 +28,10 @@ type Config struct {
 	ClickUpAssigneeID    string
 	ClickUpAPIBaseURL    string
 
-	LLMProvider string
-	LLMAPIKey   string
-	LLMModel    string
+	LLMProvider   string
+	LLMAPIKey     string
+	LLMModel      string
+	LLMAPIBaseURL string
 
 	EmailProvider string
 	EmailAPIKey   string
@@ -69,6 +70,7 @@ func Load() (*Config, error) {
 		LLMProvider:          strings.TrimSpace(os.Getenv("LLM_PROVIDER")),
 		LLMAPIKey:            strings.TrimSpace(os.Getenv("LLM_API_KEY")),
 		LLMModel:             strings.TrimSpace(os.Getenv("LLM_MODEL")),
+		LLMAPIBaseURL:        strings.TrimSpace(os.Getenv("LLM_API_BASE_URL")),
 		EmailProvider:        strings.TrimSpace(os.Getenv("EMAIL_PROVIDER")),
 		EmailAPIKey:          strings.TrimSpace(os.Getenv("EMAIL_API_KEY")),
 		EmailFrom:            strings.TrimSpace(os.Getenv("EMAIL_FROM")),
@@ -110,6 +112,12 @@ func Load() (*Config, error) {
 
 	if cfg.ClickUpAPIBaseURL != "" {
 		if err := validateHTTPURL("CLICKUP_API_BASE_URL", cfg.ClickUpAPIBaseURL); err != nil {
+			return nil, err
+		}
+	}
+
+	if cfg.LLMAPIBaseURL != "" {
+		if err := validateHTTPURL("LLM_API_BASE_URL", cfg.LLMAPIBaseURL); err != nil {
 			return nil, err
 		}
 	}

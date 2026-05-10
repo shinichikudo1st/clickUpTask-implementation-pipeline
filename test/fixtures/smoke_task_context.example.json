@@ -1,0 +1,24 @@
+{
+  "task_id": "abc123",
+  "name": "Example: implement smoke test command",
+  "description": "Add cmd/smoke-llm and verify OpenAI returns valid milestone markdown.",
+  "status": "in progress",
+  "priority": "normal",
+  "assignees": [
+    { "id": "1", "username": "you", "email": "" }
+  ],
+  "list_id": "list",
+  "list_name": "Backlog",
+  "folder_id": "",
+  "folder_name": "",
+  "space_id": "space",
+  "space_name": "Engineering",
+  "team_id": "",
+  "url": "https://app.clickup.com/t/abc123",
+  "date_created_ms": "",
+  "date_updated_ms": "",
+  "due_date_ms": "",
+  "custom_fields_json": null,
+  "raw_task_json": null,
+  "comments_json": null
+}
