@@ -2,12 +2,13 @@
 
 Go service that turns new ClickUp assignments into ApexSuite-style milestone `.md` plans, persists metadata (Supabase), and emails the result. See `../ClickUpMilestonePlannerMilestone.md` for the full plan.
 
-## Phase 0–3 (current)
+## Phase 0–4 (current)
 
 - **Phase 0:** Chi router, `GET /v1/health`, repo layout, Docker, CI.
 - **Phase 1:** `config.Load()` (godotenv + validation), structured JSON request logs (with request ID), JSON panic recovery, ApexSuite response helpers, `404` / `405` handlers, graceful shutdown.
 - **Phase 2:** `DATABASE_URL` (optional) with TLS validation, `db/migrations/001_initial_schema.sql`, `db.Connect` pool, `db.Store` repository (tasks, events, generations), health checks DB when configured.
 - **Phase 3:** `POST /v1/webhooks/clickup` — verifies ClickUp `X-Signature` (HMAC-SHA256 hex of raw body), filters assignment-related events, dedupes by `webhook_id:history_item_id` (or body hash), inserts into `clickup_events`.
+- **Phase 4:** `services.ClickUpClient` — `GetTask` / `GetTaskComments` against ClickUp API v2 (`CLICKUP_API_TOKEN`, optional `CLICKUP_API_BASE_URL`), 30s HTTP timeout, maps 401/403/404/429 to `ClickUpHTTPError`, normalizes to `models.TaskContext`.
 
 ### Supabase migration (Phase 2)
 

@@ -159,6 +159,16 @@ func TestLoad_DatabaseURLRequiresSSLMode(t *testing.T) {
 	}
 }
 
+func TestLoad_ClickUpAPIBaseURLInvalidScheme(t *testing.T) {
+	t.Setenv("API_SECRET", "longenough")
+	t.Setenv("CLICKUP_API_BASE_URL", "ftp://example.com/api/v2")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestLoad_DatabaseURLAcceptRequire(t *testing.T) {
 	t.Setenv("API_SECRET", "longenough")
 	t.Setenv("DATABASE_URL", "postgres://u:p@host:5432/db?sslmode=require")

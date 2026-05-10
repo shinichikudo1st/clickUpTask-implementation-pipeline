@@ -26,6 +26,7 @@ type Config struct {
 	ClickUpWebhookSecret string
 	ClickUpTeamID        string
 	ClickUpAssigneeID    string
+	ClickUpAPIBaseURL    string
 
 	LLMProvider string
 	LLMAPIKey   string
@@ -64,6 +65,7 @@ func Load() (*Config, error) {
 		ClickUpWebhookSecret: strings.TrimSpace(os.Getenv("CLICKUP_WEBHOOK_SECRET")),
 		ClickUpTeamID:        strings.TrimSpace(os.Getenv("CLICKUP_TEAM_ID")),
 		ClickUpAssigneeID:    strings.TrimSpace(os.Getenv("CLICKUP_ASSIGNEE_USER_ID")),
+		ClickUpAPIBaseURL:    strings.TrimSpace(os.Getenv("CLICKUP_API_BASE_URL")),
 		LLMProvider:          strings.TrimSpace(os.Getenv("LLM_PROVIDER")),
 		LLMAPIKey:            strings.TrimSpace(os.Getenv("LLM_API_KEY")),
 		LLMModel:             strings.TrimSpace(os.Getenv("LLM_MODEL")),
@@ -102,6 +104,12 @@ func Load() (*Config, error) {
 
 	if cfg.DatabaseURL != "" {
 		if err := validateDatabaseTLS(cfg.DatabaseURL); err != nil {
+			return nil, err
+		}
+	}
+
+	if cfg.ClickUpAPIBaseURL != "" {
+		if err := validateHTTPURL("CLICKUP_API_BASE_URL", cfg.ClickUpAPIBaseURL); err != nil {
 			return nil, err
 		}
 	}
