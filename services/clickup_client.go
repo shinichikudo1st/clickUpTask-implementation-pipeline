@@ -315,3 +315,90 @@ func idToString(id interface{}) string {
 		return strings.TrimSpace(fmt.Sprint(v))
 	}
 }
+
+// ListedTeamTask is minimal metadata from GET /team/{team_id}/task (filtered list).
+type ListedTeamTask struct {
+	ID          string
+	DateUpdated time.Time
+}
+
+// ListTeamTasksForAssignee returns tasks assigned to assigneeID on teamID updated strictly
+// after dateUpdatedGt, paging until ClickUp returns fewer than 100 tasks per page.
+func (c *ClickUpClient) ListTeamTasksForAssignee(ctx context.Context, teamID, assigneeID string, dateUpdatedGt time.Time) ([]ListedTeamTask, error) {
+	teamID = strings.TrimSpace(teamID)
+	assigneeID = strings.TrimSpace(assigneeID)
+	if teamID == "" {
+		return nil, errors.New("clickup: team_id is required for team task list")
+	}
+	if assigneeID == "" {
+		return nil, errors.New("clickup: assignee_id is required for team task list")
+	}
+	ms := dateUpdatedGt.UnixMilli()
+	if ms < 0 {
+		ms = 0
+	}
+
+	var out []ListedTeamTask
+	for page := 0; ; page++ {
+		u, err := url.Parse(c.baseURL + "/team/" + url.PathEscape(teamID) + "/task")
+		if err != nil {
+			return nil, err
+		}
+		q := u.Query()
+		q.Add("assignees[]", assigneeID)
+		q.Set("date_updated_gt", strconv.FormatInt(ms, 10))
+		q.Set("page", strconv.Itoa(page))
+		q.Set("include_closed", "true")
+		q.Set("subtasks", "true")
+		q.Set("order_by", "updated")
+		u.RawQuery = q.Encode()
+
+		raw, status, hdr, err := c.getBytes(ctx, u.String())
+		if err != nil {
+			return nil, err
+		}
+		if status != http.StatusOK {
+			return nil, mapClickUpFailure(status, raw, hdr)
+		}
+
+		var payload struct {
+			Tasks []struct {
+				ID          string `json:"id"`
+				DateUpdated string `json:"date_updated"`
+			} `json:"tasks"`
+		}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return nil, fmt.Errorf("clickup: decode team tasks: %w", err)
+		}
+		if len(payload.Tasks) == 0 {
+			break
+		}
+		for _, t := range payload.Tasks {
+			id := strings.TrimSpace(t.ID)
+			if id == "" {
+				continue
+			}
+			du, err := parseClickUpMillisTime(t.DateUpdated)
+			if err != nil {
+				du = time.Now().UTC()
+			}
+			out = append(out, ListedTeamTask{ID: id, DateUpdated: du})
+		}
+		if len(payload.Tasks) < 100 {
+			break
+		}
+	}
+	return out, nil
+}
+
+func parseClickUpMillisTime(s string) (time.Time, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, errors.New("empty timestamp")
+	}
+	ms, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.UnixMilli(ms).UTC(), nil
+}

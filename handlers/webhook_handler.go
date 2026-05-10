@@ -16,11 +16,6 @@ import (
 
 const maxWebhookBodyBytes = 1 << 20
 
-// MilestonePlanner runs the Phase 8 pipeline (ClickUp → generate → storage → email).
-type MilestonePlanner interface {
-	GenerateForTask(ctx context.Context, taskID string, force bool) error
-}
-
 // ClickUpWebhookHandler receives signed ClickUp webhooks, persists supported
 // assignment-related events to clickup_events, and returns 200 with accepted metadata.
 // Optional planner: when non-nil and the event row is newly inserted, runs GenerateForTask

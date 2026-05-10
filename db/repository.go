@@ -302,3 +302,39 @@ LIMIT 1
 	}
 	return row, nil
 }
+
+const pollerStateID = "default"
+
+// GetPollerLastPolledAt returns the stored watermark for ClickUp date_updated_gt filtering.
+// If the row is missing, returns (epoch, nil) so callers can treat it as first-run.
+func (s *Store) GetPollerLastPolledAt(ctx context.Context) (time.Time, error) {
+	const q = `SELECT last_polled_at FROM milestone_poller_state WHERE id = $1`
+	var t time.Time
+	err := s.db.QueryRowContext(ctx, q, pollerStateID).Scan(&t)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Unix(0, 0).UTC(), nil
+	}
+	if err != nil {
+		return time.Time{}, fmt.Errorf("get poller watermark: %w", err)
+	}
+	return t.UTC(), nil
+}
+
+// SetPollerLastPolledAt upserts the poller watermark (typically time.Now() at end of a cycle).
+func (s *Store) SetPollerLastPolledAt(ctx context.Context, at time.Time) error {
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	const q = `
+INSERT INTO milestone_poller_state (id, last_polled_at, updated_at)
+VALUES ($1, $2, now())
+ON CONFLICT (id) DO UPDATE SET
+    last_polled_at = EXCLUDED.last_polled_at,
+    updated_at = now()
+`
+	_, err := s.db.ExecContext(ctx, q, pollerStateID, at.UTC())
+	if err != nil {
+		return fmt.Errorf("set poller watermark: %w", err)
+	}
+	return nil
+}

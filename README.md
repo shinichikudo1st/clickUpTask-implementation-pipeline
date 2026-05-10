@@ -2,18 +2,19 @@
 
 Go service that turns new ClickUp assignments into ApexSuite-style milestone `.md` plans, persists metadata (Supabase), and emails the result. See `../ClickUpMilestonePlannerMilestone.md` for the full plan.
 
-## Phase 0–9 (current)
+## Phase 0–10 (current)
 
 - **Phase 0:** Chi router, `GET /v1/health`, repo layout, Docker, CI.
 - **Phase 1:** `config.Load()` (godotenv + validation), structured JSON request logs (with request ID), JSON panic recovery, ApexSuite response helpers, `404` / `405` handlers, graceful shutdown.
-- **Phase 2:** `DATABASE_URL` (optional) with TLS validation, `db/migrations/001_initial_schema.sql`, `db.Connect` pool, `db.Store` repository (tasks, events, generations), health checks DB when configured.
+- **Phase 2:** `DATABASE_URL` (optional) with TLS validation, `db/migrations/001_initial_schema.sql` plus **`002_poller_state.sql`** (poller watermark), `db.Connect` pool, `db.Store` repository (tasks, events, generations, poller state), health checks DB when configured.
 - **Phase 3:** `POST /v1/webhooks/clickup` — verifies ClickUp `X-Signature` (HMAC-SHA256 hex of raw body), filters assignment-related events, dedupes by `webhook_id:history_item_id` (or body hash), inserts into `clickup_events`.
 - **Phase 4:** `services.ClickUpClient` — `GetTask` / `GetTaskComments` against ClickUp API v2 (`CLICKUP_API_TOKEN`, optional `CLICKUP_API_BASE_URL`), 30s HTTP timeout, maps 401/403/404/429 to `ClickUpHTTPError`, normalizes to `models.TaskContext`.
 - **Phase 5:** `services.Generator` + `OpenAIGenerator` — embedded prompt (`services/prompts/milestone_prompt.md`) instructs ApexSuite-style milestones (metadata ribbon, `---` separators, decision tables, fenced text architecture diagrams, optional API/data contract, SQL index hints, directory tree, ASCII-only `### Phase N - Title` phase headings), OpenAI Chat Completions (`LLM_API_KEY`, `LLM_MODEL`, optional `LLM_PROVIDER=openai`, optional `LLM_API_BASE_URL`), post-process (CRLF normalize, strip optional markdown code fences), section + secret heuristics validation, SHA-256 via `internal/checksum`, filename `{taskId}-{slug}-milestone.md` (`internal/slug`).
 - **Phase 6:** `services/storage` — `BlobStore` (`Upload` / `Download` / `SignedDownloadURL`), `SupabaseBlobStore` (Storage REST, `text/markdown`, `x-upsert`), `LocalBlobStore` (under `STORAGE_LOCAL_DIR`), `NewFromConfig`, `PersistMilestone` (upload then `MarkGenerationCompleted`; upload errors call `MarkGenerationFailed`). Bucket defaults to **`milestone-plans`** when `SUPABASE_STORAGE_BUCKET` is unset. Signed URL TTL: `SIGNED_URL_TTL_SECONDS` (default 3600, clamped 60–604800).
 - **Phase 7:** `services/email` — `EmailService`, **Resend** (`EMAIL_PROVIDER=resend`, `EMAIL_API_KEY`, `EMAIL_FROM`, `EMAIL_TO`, optional `EMAIL_API_BASE_URL`, optional `EMAIL_MAX_ATTACHMENT_BYTES` default 450000). Small markdown is **attached** as `text/markdown`; larger bodies require **`DownloadURL`** in the payload (link in HTML + text). `SendWithRetry` (3 attempts, capped backoff), `DeliverMilestoneEmail` → `MarkGenerationEmailSent`. Empty / `none` / `noop` provider uses **`NoopEmailService`**. Orchestration calls this in **Phase 8**.
-- **Phase 8:** `services.TryNewPlanner` + `Planner.GenerateForTask` — after a **new** `clickup_events` insert (assignment-related webhook, not a dedupe replay), runs **async** ClickUp fetch → upsert `clickup_tasks` → `pending` → `processing` → LLM → `storage.PersistMilestone` → signed URL (when supported) → `email.DeliverMilestoneEmail`. Skips work if the task already has a **`completed`** generation and `force` is false. Webhook marks `clickup_events.processed` / `error_message` after the planner finishes. **No backfill:** existing tasks in ClickUp are not scanned; only **incoming webhooks** (and later Phase 10 poller) trigger runs.
+- **Phase 8:** `services.TryNewPlanner` + `Planner.GenerateForTask` — after a **new** `clickup_events` insert (assignment-related webhook, not a dedupe replay), runs **async** ClickUp fetch → upsert `clickup_tasks` → `pending` → `processing` → LLM → `storage.PersistMilestone` → signed URL (when supported) → `email.DeliverMilestoneEmail`. Skips work if the task already has a **`completed`** generation and `force` is false. Webhook marks `clickup_events.processed` / `error_message` after the planner finishes.
 - **Phase 9:** `POST /v1/tasks/{clickup_task_id}/generate` and `GET /v1/tasks/{clickup_task_id}/plan` — require **`Authorization: Bearer <API_SECRET>`** or **`X-API-Secret`**. Generate returns **`202`** and runs the same pipeline **asynchronously** (`?force=true` or JSON `{"force":true}`). Plan returns the latest `milestone_generations` row plus **`download_url`** when status is **`completed`** and signed URLs are supported.
+- **Phase 10:** `services.RunPollCycle` + `ClickUpClient.ListTeamTasksForAssignee` — optional backfill using **`GET /team/{team_id}/task`** with **`assignees[]`** + **`date_updated_gt`** (watermark in **`milestone_poller_state`**, 2-minute overlap). Skips tasks with a **completed** latest generation (same as webhooks). **`go run ./cmd/poll-milestones`** for cron/one-shot; or set **`CLICKUP_POLLER_ENABLED=true`** and **`CLICKUP_POLL_INTERVAL_SECONDS` ≥ 30** for an in-process ticker in **`go run .`**. Requires **`CLICKUP_TEAM_ID`** and **`CLICKUP_ASSIGNEE_USER_ID`**. Default **`CLICKUP_POLLER_LOOKBACK_HOURS=168`** applies when the watermark is still at epoch (first run).
 
 ### Supabase Storage bucket (Phase 6)
 
@@ -24,8 +25,9 @@ Go service that turns new ClickUp assignments into ApexSuite-style milestone `.m
 ### Supabase migration (Phase 2)
 
 1. In the Supabase project: **SQL Editor** → new query → paste `db/migrations/001_initial_schema.sql` → run.
-2. Copy the **database URI** (must include `sslmode=require` or `verify-*`) into `DATABASE_URL` in `.env`.
-3. Restart the service; `GET /v1/health` should include `"database":"connected"`.
+2. For the poller (Phase 10): run **`db/migrations/002_poller_state.sql`** in the same SQL editor (or append to your migration runner).
+3. Copy the **database URI** (must include `sslmode=require` or `verify-*`) into `DATABASE_URL` in `.env`.
+4. Restart the service; `GET /v1/health` should include `"database":"connected"`.
 
 ### ClickUp webhook (Phase 3) — what you need to do
 
@@ -78,6 +80,19 @@ go run ./cmd/smoke-email -markdown path/to/small.md
 ```
 
 `-dry-run` only validates config and payload shape (no API call). A successful run prints to **stderr**; check **EMAIL_TO** inbox and Resend **Logs**.
+
+### Poller one-shot (Phase 10)
+
+Requires the same **`DATABASE_URL`**, planner, and ClickUp env as the main service, plus **`CLICKUP_TEAM_ID`** and **`CLICKUP_ASSIGNEE_USER_ID`**. Run **`db/migrations/002_poller_state.sql`** once. Then:
+
+```bash
+set CLICKUP_POLLER_ENABLED=true
+set CLICKUP_TEAM_ID=your_team_id
+set CLICKUP_ASSIGNEE_USER_ID=your_user_id
+go run ./cmd/poll-milestones
+```
+
+For a repeating in-process poll, set **`CLICKUP_POLL_INTERVAL_SECONDS`** to **30** or higher and start **`go run .`** (ticker runs only when the milestone planner is enabled).
 
 ## Run locally
 

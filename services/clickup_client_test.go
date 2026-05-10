@@ -2,9 +2,11 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -250,5 +252,55 @@ func TestNewClickUpClient_customBaseURL(t *testing.T) {
 	}
 	if c.baseURL != "https://example.com/api/v2" {
 		t.Fatalf("base: %q", c.baseURL)
+	}
+}
+
+func TestClickUpClient_ListTeamTasksForAssignee_pagination(t *testing.T) {
+	t.Parallel()
+	var pageHits []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/team/9001/task" {
+			t.Fatalf("path: %s", r.URL.Path)
+		}
+		q := r.URL.Query()
+		if q.Get("assignees[]") != "777" {
+			t.Fatalf("assignees: %v", q)
+		}
+		page := q.Get("page")
+		pageHits = append(pageHits, page)
+		w.Header().Set("Content-Type", "application/json")
+		var payload any
+		switch page {
+		case "0":
+			tasks := make([]map[string]string, 100)
+			for i := 0; i < 100; i++ {
+				tasks[i] = map[string]string{"id": "p0-" + strconv.Itoa(i), "date_updated": "1700000000000"}
+			}
+			payload = map[string]any{"tasks": tasks}
+		case "1":
+			payload = map[string]any{"tasks": []map[string]string{{"id": "p1-last", "date_updated": "1700000000001"}}}
+		default:
+			payload = map[string]any{"tasks": []any{}}
+		}
+		b, _ := json.Marshal(payload)
+		_, _ = w.Write(b)
+	}))
+	t.Cleanup(server.Close)
+
+	client := &ClickUpClient{
+		httpClient: server.Client(),
+		baseURL:    strings.TrimSuffix(server.URL, "/") + "/api/v2",
+		token:      "pk_test",
+	}
+	gt := time.UnixMilli(1699999999999)
+	tasks, err := client.ListTeamTasksForAssignee(context.Background(), "9001", "777", gt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 101 {
+		t.Fatalf("len=%d", len(tasks))
+	}
+	if len(pageHits) != 2 || pageHits[0] != "0" || pageHits[1] != "1" {
+		t.Fatalf("pages=%v", pageHits)
 	}
 }

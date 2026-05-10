@@ -274,3 +274,23 @@ func TestLoad_EmailResendOK(t *testing.T) {
 		t.Fatal()
 	}
 }
+
+func TestLoad_pollIntervalTooSmall(t *testing.T) {
+	t.Setenv("API_SECRET", "longenough")
+	t.Setenv("CLICKUP_POLL_INTERVAL_SECONDS", "10")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestLoad_pollLookbackOutOfRange(t *testing.T) {
+	t.Setenv("API_SECRET", "longenough")
+	t.Setenv("CLICKUP_POLLER_LOOKBACK_HOURS", "0")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}

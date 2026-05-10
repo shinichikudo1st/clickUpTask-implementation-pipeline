@@ -309,3 +309,38 @@ func TestStore_LatestGenerationByTaskID_emptyArg(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestStore_pollerWatermark_getSet(t *testing.T) {
+	t.Parallel()
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	store := NewStore(sqlDB)
+
+	ts := time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC)
+	mock.ExpectQuery(`SELECT last_polled_at FROM milestone_poller_state WHERE id = \$1`).
+		WithArgs("default").
+		WillReturnRows(sqlmock.NewRows([]string{"last_polled_at"}).AddRow(ts))
+
+	got, err := store.GetPollerLastPolledAt(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Equal(ts.UTC()) {
+		t.Fatalf("got %v", got)
+	}
+
+	next := time.Date(2026, 4, 2, 10, 0, 0, 0, time.UTC)
+	mock.ExpectExec(`INSERT INTO milestone_poller_state`).
+		WithArgs("default", next).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	if err := store.SetPollerLastPolledAt(context.Background(), next); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}

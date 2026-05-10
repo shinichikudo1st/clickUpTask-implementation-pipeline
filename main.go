@@ -88,6 +88,33 @@ func main() {
 		}
 	}()
 
+	if cfg.ClickUpPollerEnabled && cfg.ClickUpPollIntervalSec > 0 && store != nil && milestonePlanner != nil {
+		cu, err := services.NewClickUpClient(cfg)
+		if err != nil {
+			log.Printf("poller ticker: disabled (clickup client: %v)", err)
+		} else {
+			interval := time.Duration(cfg.ClickUpPollIntervalSec) * time.Second
+			log.Printf("poller ticker: every %s (CLICKUP_POLL_INTERVAL_SECONDS)", interval)
+			go func() {
+				ticker := time.NewTicker(interval)
+				defer ticker.Stop()
+				for range ticker.C {
+					ctx, cancel := context.WithTimeout(context.Background(), 18*time.Minute)
+					stats, err := services.RunPollCycle(ctx, cfg, store, cu, milestonePlanner)
+					cancel()
+					if err != nil {
+						log.Printf("poller tick: %v", err)
+						continue
+					}
+					if stats.Listed > 0 || stats.Runs > 0 || stats.GenerationFailures > 0 {
+						log.Printf("poller tick: listed=%d runs=%d skipped_completed=%d generation_failures=%d",
+							stats.Listed, stats.Runs, stats.SkippedCompleted, stats.GenerationFailures)
+					}
+				}
+			}()
+		}
+	}
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit

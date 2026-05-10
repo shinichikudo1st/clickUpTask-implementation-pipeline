@@ -29,6 +29,11 @@ type Config struct {
 	ClickUpAssigneeID    string
 	ClickUpAPIBaseURL    string
 
+	// Phase 10: optional poller (CLI or in-process ticker) for missed webhooks / local dev.
+	ClickUpPollerEnabled    bool
+	ClickUpPollIntervalSec  int // >0 with PollerEnabled starts a background ticker in main.
+	ClickUpPollerLookbackH  int // first-run window when watermark is still at epoch
+
 	LLMProvider   string
 	LLMAPIKey     string
 	LLMModel      string
@@ -75,6 +80,9 @@ func Load() (*Config, error) {
 		ClickUpTeamID:        strings.TrimSpace(os.Getenv("CLICKUP_TEAM_ID")),
 		ClickUpAssigneeID:    strings.TrimSpace(os.Getenv("CLICKUP_ASSIGNEE_USER_ID")),
 		ClickUpAPIBaseURL:    strings.TrimSpace(os.Getenv("CLICKUP_API_BASE_URL")),
+		ClickUpPollerEnabled:   boolFromEnv("CLICKUP_POLLER_ENABLED", false),
+		ClickUpPollIntervalSec: intFromEnv("CLICKUP_POLL_INTERVAL_SECONDS", 0),
+		ClickUpPollerLookbackH: intFromEnv("CLICKUP_POLLER_LOOKBACK_HOURS", 168),
 		LLMProvider:          strings.TrimSpace(os.Getenv("LLM_PROVIDER")),
 		LLMAPIKey:            strings.TrimSpace(os.Getenv("LLM_API_KEY")),
 		LLMModel:             strings.TrimSpace(os.Getenv("LLM_MODEL")),
@@ -127,6 +135,16 @@ func Load() (*Config, error) {
 		if err := validateHTTPURL("CLICKUP_API_BASE_URL", cfg.ClickUpAPIBaseURL); err != nil {
 			return nil, err
 		}
+	}
+
+	if cfg.ClickUpPollIntervalSec < 0 {
+		return nil, errors.New("CLICKUP_POLL_INTERVAL_SECONDS must be >= 0")
+	}
+	if cfg.ClickUpPollIntervalSec > 0 && cfg.ClickUpPollIntervalSec < 30 {
+		return nil, errors.New("CLICKUP_POLL_INTERVAL_SECONDS must be at least 30 when non-zero")
+	}
+	if cfg.ClickUpPollerLookbackH < 1 || cfg.ClickUpPollerLookbackH > 24*365 {
+		return nil, errors.New("CLICKUP_POLLER_LOOKBACK_HOURS must be between 1 and 8760")
 	}
 
 	if cfg.LLMAPIBaseURL != "" {
@@ -196,6 +214,19 @@ func intFromEnv(key string, defaultVal int) int {
 		return defaultVal
 	}
 	return n
+}
+
+func boolFromEnv(key string, defaultVal bool) bool {
+	s := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if s == "" {
+		return defaultVal
+	}
+	switch s {
+	case "1", "true", "yes", "y", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func validateLocalStorageDir(dir string) error {
