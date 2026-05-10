@@ -38,12 +38,18 @@ func main() {
 	}
 
 	var milestonePlanner handlers.MilestonePlanner
-	if store != nil {
+	if store == nil {
+		log.Print("milestone planner inactive: no database store (set DATABASE_URL and ensure the DB is reachable)")
+	} else {
 		p, err := services.TryNewPlanner(cfg, store)
-		if err != nil {
+		switch {
+		case err != nil:
 			log.Printf("milestone planner disabled: %v", err)
-		} else if p != nil {
+		case p != nil:
 			milestonePlanner = p
+			log.Print("milestone planner enabled: new assignment webhooks run the full pipeline asynchronously (ClickUp → LLM → storage → email)")
+		default:
+			log.Print("milestone planner inactive: TryNewPlanner returned no planner (unexpected)")
 		}
 	}
 

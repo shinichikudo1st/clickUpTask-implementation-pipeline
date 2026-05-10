@@ -161,11 +161,11 @@ func (p *Planner) GenerateForTask(ctx context.Context, taskID string, force bool
 	}
 
 	mailIn := email.SendMilestoneInput{
-		TaskName:       tc.Name,
-		TaskURL:        tc.URL,
-		FileName:       plan.FileName,
-		MarkdownBody:   []byte(plan.Markdown),
-		DownloadURL:    downloadURL,
+		TaskName:     tc.Name,
+		TaskURL:      tc.URL,
+		FileName:     plan.FileName,
+		MarkdownBody: []byte(plan.Markdown),
+		DownloadURL:  downloadURL,
 	}
 	if err := email.DeliverMilestoneEmail(ctx, p.store, p.mail, p.cfg, genID, mailIn); err != nil {
 		// File is already stored; do not fail the whole run (Phase 7 semantics).
