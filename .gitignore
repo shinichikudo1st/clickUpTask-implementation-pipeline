@@ -1,0 +1,27 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+/dist/
+
+# Go
+coverage.out
+*.test
+vendor/
+
+# Env and secrets
+.env
+.dev.vars
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,8 @@
+services:
+  pipeline:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      API_SECRET: "local-dev-change-me-16chars"
