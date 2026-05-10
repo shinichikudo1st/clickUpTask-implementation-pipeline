@@ -31,6 +31,11 @@ func main() {
 		defer func() { _ = database.Close() }()
 	}
 
+	var store *db.Store
+	if database != nil {
+		store = db.NewStore(database)
+	}
+
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID)
 	router.Use(middleware.RealIP)
@@ -39,6 +44,7 @@ func main() {
 	router.Use(middleware.Timeout(60 * time.Second))
 
 	router.Get("/v1/health", handlers.HealthHandler(database))
+	router.Post("/v1/webhooks/clickup", handlers.ClickUpWebhookHandler(cfg, store))
 	router.NotFound(handlers.NotFoundHandler)
 	router.MethodNotAllowed(handlers.MethodNotAllowedHandler)
 
