@@ -162,7 +162,7 @@ func TestPlanner_GenerateForTask_happyPath(t *testing.T) {
 	}
 	pl := NewPlannerWithDeps(cfg, store, &fakeCU{task: tc}, &fakeGen{
 		out: &GeneratedMilestonePlan{
-			Markdown:          "# Title\n\n## Objective\n\nx\n\n## Recommended Approach\n\nx\n\n## Architecture\n\nx\n\n## Environment Variables\n\n- X\n\n## Phases\n\n### Phase 1 — A\n#### Tasks\n- [ ] t\n#### Milestone 1 Checkpoint\n- [ ] c\n\n## Master Checklist\n- [ ] m\n",
+			Markdown:          "# Title\n\n## Objective\n\nx\n\n## Recommended Approach\n\nx\n\n## Architecture\n\nx\n\n## Environment Variables\n\n- X\n\n## Phases\n\n### Phase 1 - A\n#### Tasks\n- [ ] t\n#### Milestone 1 Checkpoint\n- [ ] c\n\n## Master Checklist\n- [ ] m\n",
 			MarkdownSHA256:    "sha",
 			FileName:          "task-1-hello-milestone.md",
 			Model:             "gpt-test",

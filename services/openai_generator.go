@@ -17,7 +17,7 @@ import (
 
 const (
 	defaultOpenAIBaseURL = "https://api.openai.com/v1"
-	defaultLLMModel      = "gpt-4o-mini"
+	defaultLLMModel      = "gpt-5.4-mini"
 	maxJSONBytes         = 32000
 )
 
@@ -29,7 +29,7 @@ type OpenAIGenerator struct {
 	httpClient *http.Client
 }
 
-// NewOpenAIGenerator builds a generator from config. LLM_API_KEY is required; LLM_MODEL defaults to gpt-4o-mini.
+// NewOpenAIGenerator builds a generator from config. LLM_API_KEY is required; LLM_MODEL defaults to gpt-5.4-mini.
 func NewOpenAIGenerator(cfg *config.Config) (*OpenAIGenerator, error) {
 	if cfg == nil {
 		return nil, errors.New("config is nil")
@@ -77,9 +77,9 @@ func (g *OpenAIGenerator) Generate(ctx context.Context, task models.TaskContext)
 
 	// Newer models (e.g. GPT-5 family, o-series) reject max_tokens; use max_completion_tokens only.
 	reqBody := map[string]interface{}{
-		"model":                   g.model,
-		"temperature":             0.2,
-		"max_completion_tokens":   4096,
+		"model":                 g.model,
+		"temperature":           0.2,
+		"max_completion_tokens": 4096,
 		"messages": []map[string]string{
 			{"role": "system", "content": systemPart},
 			{"role": "user", "content": userPart},
@@ -150,23 +150,23 @@ func taskContextJSONForPrompt(task models.TaskContext) (string, error) {
 		})
 	}
 	m := map[string]interface{}{
-		"task_id":           task.TaskID,
-		"name":              task.Name,
-		"description":       task.Description,
-		"status":            task.Status,
-		"priority":          task.Priority,
-		"assignees":         assignees,
-		"list_id":           task.ListID,
-		"list_name":         task.ListName,
-		"folder_id":         task.FolderID,
-		"folder_name":       task.FolderName,
-		"space_id":          task.SpaceID,
-		"space_name":        task.SpaceName,
-		"team_id":           task.TeamID,
-		"url":               task.URL,
-		"date_created_ms":   task.DateCreatedMs,
-		"date_updated_ms":   task.DateUpdatedMs,
-		"due_date_ms":       task.DueDateMs,
+		"task_id":            task.TaskID,
+		"name":               task.Name,
+		"description":        task.Description,
+		"status":             task.Status,
+		"priority":           task.Priority,
+		"assignees":          assignees,
+		"list_id":            task.ListID,
+		"list_name":          task.ListName,
+		"folder_id":          task.FolderID,
+		"folder_name":        task.FolderName,
+		"space_id":           task.SpaceID,
+		"space_name":         task.SpaceName,
+		"team_id":            task.TeamID,
+		"url":                task.URL,
+		"date_created_ms":    task.DateCreatedMs,
+		"date_updated_ms":    task.DateUpdatedMs,
+		"due_date_ms":        task.DueDateMs,
 		"custom_fields_json": truncateJSONFragment(task.CustomFieldsJSON),
 		"raw_task_json":      truncateJSONFragment(task.RawTaskJSON),
 		"comments_json":      truncateJSONFragment(task.CommentsJSON),

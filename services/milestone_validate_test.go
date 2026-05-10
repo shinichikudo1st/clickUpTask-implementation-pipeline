@@ -27,7 +27,7 @@ Services and DB.
 
 ## Phases
 
-### Phase 1 — Setup
+### Phase 1 - Setup
 
 #### Tasks
 
@@ -45,6 +45,52 @@ Services and DB.
 
 func TestValidateGeneratedMarkdown_ok(t *testing.T) {
 	if err := ValidateGeneratedMarkdown(validMilestoneMarkdown()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateGeneratedMarkdown_okWithOptionalSections(t *testing.T) {
+	md := `# Plan
+
+## Objective
+
+Ship it.
+
+## Recommended Approach
+
+**Decision:** Worker.
+
+## Architecture
+
+` + "```text\nA --> B\n```" + `
+
+## API Contract
+
+### GET /v1/x
+
+Example.
+
+## Environment Variables
+
+` + "```text\nAPI_SECRET=\n```" + `
+
+## Phases
+
+### Phase 0 - Bootstrap
+
+#### Tasks
+
+- [ ] Init
+
+#### Milestone 0 Checkpoint
+
+- [ ] Runs
+
+## Master Checklist
+
+- [ ] Done
+`
+	if err := ValidateGeneratedMarkdown(md); err != nil {
 		t.Fatal(err)
 	}
 }
