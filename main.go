@@ -14,6 +14,7 @@ import (
 	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/handlers"
 	appmiddleware "github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/middleware"
 	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/services"
+	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/services/storage"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -53,6 +54,15 @@ func main() {
 		}
 	}
 
+	var taskAPIBlobs storage.BlobStore
+	if store != nil {
+		if b, err := storage.NewFromConfig(cfg); err != nil {
+			log.Printf("task API: signed download URLs on GET /v1/tasks/.../plan unavailable: %v", err)
+		} else {
+			taskAPIBlobs = b
+		}
+	}
+
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID)
 	router.Use(middleware.RealIP)
@@ -62,6 +72,7 @@ func main() {
 
 	router.Get("/v1/health", handlers.HealthHandler(database))
 	router.Post("/v1/webhooks/clickup", handlers.ClickUpWebhookHandler(cfg, store, milestonePlanner))
+	handlers.RegisterTaskAPI(router, cfg, store, milestonePlanner, taskAPIBlobs)
 	router.NotFound(handlers.NotFoundHandler)
 	router.MethodNotAllowed(handlers.MethodNotAllowedHandler)
 

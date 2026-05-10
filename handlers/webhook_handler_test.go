@@ -236,8 +236,19 @@ func TestClickUpWebhook_invokesPlannerOnNewEvent(t *testing.T) {
 	if got != "t-planner" {
 		t.Fatalf("task id: %q", got)
 	}
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatal(err)
+	// MarkEventProcessed runs in the webhook goroutine after GenerateForTask returns;
+	// wg.Wait unblocks when GenerateForTask finishes, so wait until SQL expectations match.
+	deadline := time.Now().Add(2 * time.Second)
+	var metErr error
+	for time.Now().Before(deadline) {
+		metErr = mock.ExpectationsWereMet()
+		if metErr == nil {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if metErr != nil {
+		t.Fatal(metErr)
 	}
 }
 
