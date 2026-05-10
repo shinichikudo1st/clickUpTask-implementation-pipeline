@@ -2,7 +2,7 @@
 
 Go service that turns new ClickUp assignments into ApexSuite-style milestone `.md` plans, persists metadata (Supabase), and emails the result. See `../ClickUpMilestonePlannerMilestone.md` for the full plan.
 
-## Phase 0–7 (current)
+## Phase 0–8 (current)
 
 - **Phase 0:** Chi router, `GET /v1/health`, repo layout, Docker, CI.
 - **Phase 1:** `config.Load()` (godotenv + validation), structured JSON request logs (with request ID), JSON panic recovery, ApexSuite response helpers, `404` / `405` handlers, graceful shutdown.
@@ -12,6 +12,7 @@ Go service that turns new ClickUp assignments into ApexSuite-style milestone `.m
 - **Phase 5:** `services.Generator` + `OpenAIGenerator` — embedded prompt (`services/prompts/milestone_prompt.md`), OpenAI Chat Completions (`LLM_API_KEY`, `LLM_MODEL`, optional `LLM_PROVIDER=openai`, optional `LLM_API_BASE_URL`), post-process (CRLF normalize, strip optional ` ```markdown ` fences), section + secret heuristics validation, SHA-256 via `internal/checksum`, filename `{taskId}-{slug}-milestone.md` (`internal/slug`).
 - **Phase 6:** `services/storage` — `BlobStore` (`Upload` / `Download` / `SignedDownloadURL`), `SupabaseBlobStore` (Storage REST, `text/markdown`, `x-upsert`), `LocalBlobStore` (under `STORAGE_LOCAL_DIR`), `NewFromConfig`, `PersistMilestone` (upload then `MarkGenerationCompleted`; upload errors call `MarkGenerationFailed`). Bucket defaults to **`milestone-plans`** when `SUPABASE_STORAGE_BUCKET` is unset. Signed URL TTL: `SIGNED_URL_TTL_SECONDS` (default 3600, clamped 60–604800).
 - **Phase 7:** `services/email` — `EmailService`, **Resend** (`EMAIL_PROVIDER=resend`, `EMAIL_API_KEY`, `EMAIL_FROM`, `EMAIL_TO`, optional `EMAIL_API_BASE_URL`, optional `EMAIL_MAX_ATTACHMENT_BYTES` default 450000). Small markdown is **attached** as `text/markdown`; larger bodies require **`DownloadURL`** in the payload (link in HTML + text). `SendWithRetry` (3 attempts, capped backoff), `DeliverMilestoneEmail` → `MarkGenerationEmailSent`. Empty / `none` / `noop` provider uses **`NoopEmailService`**. Orchestration calls this in **Phase 8**.
+- **Phase 8:** `services.TryNewPlanner` + `Planner.GenerateForTask` — after a **new** `clickup_events` insert (assignment-related webhook, not a dedupe replay), runs **async** ClickUp fetch → upsert `clickup_tasks` → `pending` → `processing` → LLM → `storage.PersistMilestone` → signed URL (when supported) → `email.DeliverMilestoneEmail`. Skips work if the task already has a **`completed`** generation (`force` reserved for Phase 9 manual API). Webhook marks `clickup_events.processed` / `error_message` after the planner finishes. **No backfill:** existing tasks in ClickUp are not scanned; only **incoming webhooks** (and later Phase 10 poller) trigger runs.
 
 ### Supabase Storage bucket (Phase 6)
 

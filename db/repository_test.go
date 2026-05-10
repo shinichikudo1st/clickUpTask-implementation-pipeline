@@ -252,6 +252,29 @@ func TestStore_MarkGenerationEmailSent_ok(t *testing.T) {
 	}
 }
 
+func TestStore_MarkGenerationProcessing_ok(t *testing.T) {
+	t.Parallel()
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	store := NewStore(sqlDB)
+
+	id := uuid.MustParse("88888888-8888-8888-8888-888888888888")
+	mock.ExpectExec("UPDATE milestone_generations").
+		WithArgs(id).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	err = store.MarkGenerationProcessing(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestStore_MarkGenerationEmailSent_noRows(t *testing.T) {
 	t.Parallel()
 	sqlDB, mock, err := sqlmock.New()

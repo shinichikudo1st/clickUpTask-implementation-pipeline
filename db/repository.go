@@ -171,6 +171,27 @@ RETURNING id
 	return id, nil
 }
 
+// MarkGenerationProcessing moves a row from pending to processing.
+func (s *Store) MarkGenerationProcessing(ctx context.Context, id uuid.UUID) error {
+	const q = `
+UPDATE milestone_generations
+SET status = 'processing', started_at = COALESCE(started_at, now())
+WHERE id = $1 AND status = 'pending'
+`
+	result, err := s.db.ExecContext(ctx, q, id)
+	if err != nil {
+		return fmt.Errorf("mark generation processing: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // MarkGenerationCompleted sets terminal success fields.
 func (s *Store) MarkGenerationCompleted(ctx context.Context, id uuid.UUID, fileName, storageBucket, storagePath, sha256 string, emailSentAt sql.NullTime) error {
 	const q = `

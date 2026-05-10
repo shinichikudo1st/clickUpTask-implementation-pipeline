@@ -13,6 +13,7 @@ import (
 	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/db"
 	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/handlers"
 	appmiddleware "github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/middleware"
+	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/services"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -36,6 +37,16 @@ func main() {
 		store = db.NewStore(database)
 	}
 
+	var milestonePlanner handlers.MilestonePlanner
+	if store != nil {
+		p, err := services.TryNewPlanner(cfg, store)
+		if err != nil {
+			log.Printf("milestone planner disabled: %v", err)
+		} else if p != nil {
+			milestonePlanner = p
+		}
+	}
+
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID)
 	router.Use(middleware.RealIP)
@@ -44,7 +55,7 @@ func main() {
 	router.Use(middleware.Timeout(60 * time.Second))
 
 	router.Get("/v1/health", handlers.HealthHandler(database))
-	router.Post("/v1/webhooks/clickup", handlers.ClickUpWebhookHandler(cfg, store))
+	router.Post("/v1/webhooks/clickup", handlers.ClickUpWebhookHandler(cfg, store, milestonePlanner))
 	router.NotFound(handlers.NotFoundHandler)
 	router.MethodNotAllowed(handlers.MethodNotAllowedHandler)
 
