@@ -78,8 +78,8 @@ func DedupeEventKey(raw []byte) (string, error) {
 	return "body:" + hex.EncodeToString(sum[:]), nil
 }
 
-// IsAssignmentRelated reports whether this event should trigger the pipeline
-// (subject to optional assignee filter in the handler).
+// IsAssignmentRelated reports whether this event type can trigger the pipeline
+// (subject to optional assignee filter and taskCreated skip in the HTTP handler).
 func IsAssignmentRelated(event string) bool {
 	switch event {
 	case "taskAssigneeUpdated", "taskCreated":

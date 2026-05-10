@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -26,17 +27,31 @@ type Config struct {
 	ClickUpWebhookSecret string
 	ClickUpTeamID        string
 	ClickUpAssigneeID    string
+	ClickUpAPIBaseURL    string
 
-	LLMProvider string
-	LLMAPIKey   string
-	LLMModel    string
+	// Phase 10: optional poller (CLI or in-process ticker) for missed webhooks / local dev.
+	ClickUpPollerEnabled    bool
+	ClickUpPollIntervalSec  int // >0 with PollerEnabled starts a background ticker in main.
+	ClickUpPollerLookbackH  int // first-run window when watermark is still at epoch
 
-	EmailProvider string
-	EmailAPIKey   string
-	EmailFrom     string
-	EmailTo       string
+	LLMProvider   string
+	LLMAPIKey     string
+	LLMModel      string
+	LLMAPIBaseURL string
+
+	EmailProvider             string
+	EmailAPIKey               string
+	EmailFrom                 string
+	EmailTo                   string
+	EmailAPIBaseURL           string // optional; default https://api.resend.com for Resend
+	EmailMaxAttachmentBytes   int    // optional; max markdown bytes to attach (default 450000)
 
 	AppBaseURL string
+
+	// Phase 6: object storage for generated markdown (local dir or Supabase Storage).
+	StorageBackend      string // STORAGE_BACKEND: local | supabase | empty (see storage.NewFromConfig)
+	StorageLocalDir     string // STORAGE_LOCAL_DIR: writable directory for local backend
+	SignedURLTTLSeconds int    // SIGNED_URL_TTL_SECONDS: signed URL lifetime (Supabase); 0 → default 900s
 }
 
 // Load reads configuration from the process environment. Optional values are
@@ -64,14 +79,24 @@ func Load() (*Config, error) {
 		ClickUpWebhookSecret: strings.TrimSpace(os.Getenv("CLICKUP_WEBHOOK_SECRET")),
 		ClickUpTeamID:        strings.TrimSpace(os.Getenv("CLICKUP_TEAM_ID")),
 		ClickUpAssigneeID:    strings.TrimSpace(os.Getenv("CLICKUP_ASSIGNEE_USER_ID")),
+		ClickUpAPIBaseURL:    strings.TrimSpace(os.Getenv("CLICKUP_API_BASE_URL")),
+		ClickUpPollerEnabled:   boolFromEnv("CLICKUP_POLLER_ENABLED", false),
+		ClickUpPollIntervalSec: intFromEnv("CLICKUP_POLL_INTERVAL_SECONDS", 0),
+		ClickUpPollerLookbackH: intFromEnv("CLICKUP_POLLER_LOOKBACK_HOURS", 168),
 		LLMProvider:          strings.TrimSpace(os.Getenv("LLM_PROVIDER")),
 		LLMAPIKey:            strings.TrimSpace(os.Getenv("LLM_API_KEY")),
 		LLMModel:             strings.TrimSpace(os.Getenv("LLM_MODEL")),
-		EmailProvider:        strings.TrimSpace(os.Getenv("EMAIL_PROVIDER")),
-		EmailAPIKey:          strings.TrimSpace(os.Getenv("EMAIL_API_KEY")),
-		EmailFrom:            strings.TrimSpace(os.Getenv("EMAIL_FROM")),
-		EmailTo:              strings.TrimSpace(os.Getenv("EMAIL_TO")),
-		AppBaseURL:           strings.TrimSpace(os.Getenv("APP_BASE_URL")),
+		LLMAPIBaseURL:        strings.TrimSpace(os.Getenv("LLM_API_BASE_URL")),
+		EmailProvider:             strings.TrimSpace(os.Getenv("EMAIL_PROVIDER")),
+		EmailAPIKey:               strings.TrimSpace(os.Getenv("EMAIL_API_KEY")),
+		EmailFrom:                 strings.TrimSpace(os.Getenv("EMAIL_FROM")),
+		EmailTo:                   strings.TrimSpace(os.Getenv("EMAIL_TO")),
+		EmailAPIBaseURL:           strings.TrimSpace(os.Getenv("EMAIL_API_BASE_URL")),
+		EmailMaxAttachmentBytes:   intFromEnv("EMAIL_MAX_ATTACHMENT_BYTES", 0),
+		AppBaseURL:                strings.TrimSpace(os.Getenv("APP_BASE_URL")),
+		StorageBackend:       strings.TrimSpace(os.Getenv("STORAGE_BACKEND")),
+		StorageLocalDir:      strings.TrimSpace(os.Getenv("STORAGE_LOCAL_DIR")),
+		SignedURLTTLSeconds:  intFromEnv("SIGNED_URL_TTL_SECONDS", 0),
 	}
 
 	if cfg.APISecret == "" {
@@ -106,7 +131,138 @@ func Load() (*Config, error) {
 		}
 	}
 
+	if cfg.ClickUpAPIBaseURL != "" {
+		if err := validateHTTPURL("CLICKUP_API_BASE_URL", cfg.ClickUpAPIBaseURL); err != nil {
+			return nil, err
+		}
+	}
+
+	if cfg.ClickUpPollIntervalSec < 0 {
+		return nil, errors.New("CLICKUP_POLL_INTERVAL_SECONDS must be >= 0")
+	}
+	if cfg.ClickUpPollIntervalSec > 0 && cfg.ClickUpPollIntervalSec < 30 {
+		return nil, errors.New("CLICKUP_POLL_INTERVAL_SECONDS must be at least 30 when non-zero")
+	}
+	if cfg.ClickUpPollerLookbackH < 1 || cfg.ClickUpPollerLookbackH > 24*365 {
+		return nil, errors.New("CLICKUP_POLLER_LOOKBACK_HOURS must be between 1 and 8760")
+	}
+
+	if cfg.LLMAPIBaseURL != "" {
+		if err := validateHTTPURL("LLM_API_BASE_URL", cfg.LLMAPIBaseURL); err != nil {
+			return nil, err
+		}
+	}
+
+	if cfg.StorageBackend != "" {
+		switch strings.ToLower(cfg.StorageBackend) {
+		case "local", "supabase", "auto":
+		default:
+			return nil, fmt.Errorf("STORAGE_BACKEND must be local, supabase, or auto, got %q", cfg.StorageBackend)
+		}
+	}
+
+	if cfg.StorageLocalDir != "" {
+		if err := validateLocalStorageDir(cfg.StorageLocalDir); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := validateEmailConfig(cfg); err != nil {
+		return nil, err
+	}
+
+	if cfg.EmailAPIBaseURL != "" {
+		if err := validateHTTPURL("EMAIL_API_BASE_URL", cfg.EmailAPIBaseURL); err != nil {
+			return nil, err
+		}
+	}
+
 	return cfg, nil
+}
+
+func validateEmailConfig(cfg *Config) error {
+	p := strings.ToLower(strings.TrimSpace(cfg.EmailProvider))
+	if p == "" {
+		return nil
+	}
+	switch p {
+	case "resend", "none", "noop":
+	default:
+		return fmt.Errorf("EMAIL_PROVIDER must be resend, none, or noop, got %q", cfg.EmailProvider)
+	}
+	if p == "resend" {
+		if cfg.EmailAPIKey == "" {
+			return errors.New("EMAIL_PROVIDER=resend requires EMAIL_API_KEY")
+		}
+		if cfg.EmailFrom == "" {
+			return errors.New("EMAIL_PROVIDER=resend requires EMAIL_FROM")
+		}
+		if cfg.EmailTo == "" {
+			return errors.New("EMAIL_PROVIDER=resend requires EMAIL_TO")
+		}
+	}
+	return nil
+}
+
+func intFromEnv(key string, defaultVal int) int {
+	s := strings.TrimSpace(os.Getenv(key))
+	if s == "" {
+		return defaultVal
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return defaultVal
+	}
+	return n
+}
+
+func boolFromEnv(key string, defaultVal bool) bool {
+	s := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if s == "" {
+		return defaultVal
+	}
+	switch s {
+	case "1", "true", "yes", "y", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func validateLocalStorageDir(dir string) error {
+	// Reject obvious traversal; OS will still enforce real paths at runtime.
+	if strings.Contains(dir, "..") {
+		return errors.New("STORAGE_LOCAL_DIR must not contain '..'")
+	}
+	return nil
+}
+
+// MaxEmailAttachmentBytes caps markdown attachment size; larger bodies use download link only.
+func (c *Config) MaxEmailAttachmentBytes() int {
+	if c == nil || c.EmailMaxAttachmentBytes <= 0 {
+		return 450_000
+	}
+	const maxCap = 10_000_000
+	if c.EmailMaxAttachmentBytes > maxCap {
+		return maxCap
+	}
+	return c.EmailMaxAttachmentBytes
+}
+
+// SignedURLTTL returns a bounded TTL for storage signed URLs (default 15m, min 1m, max 7d).
+func (c *Config) SignedURLTTL() time.Duration {
+	s := c.SignedURLTTLSeconds
+	if s <= 0 {
+		s = 900
+	}
+	const minSec, maxSec = 60, 604800
+	if s < minSec {
+		s = minSec
+	}
+	if s > maxSec {
+		s = maxSec
+	}
+	return time.Duration(s) * time.Second
 }
 
 func validateDatabaseTLS(databaseURL string) error {

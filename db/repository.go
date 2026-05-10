@@ -171,6 +171,27 @@ RETURNING id
 	return id, nil
 }
 
+// MarkGenerationProcessing moves a row from pending to processing.
+func (s *Store) MarkGenerationProcessing(ctx context.Context, id uuid.UUID) error {
+	const q = `
+UPDATE milestone_generations
+SET status = 'processing', started_at = COALESCE(started_at, now())
+WHERE id = $1 AND status = 'pending'
+`
+	result, err := s.db.ExecContext(ctx, q, id)
+	if err != nil {
+		return fmt.Errorf("mark generation processing: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // MarkGenerationCompleted sets terminal success fields.
 func (s *Store) MarkGenerationCompleted(ctx context.Context, id uuid.UUID, fileName, storageBucket, storagePath, sha256 string, emailSentAt sql.NullTime) error {
 	const q = `
@@ -188,6 +209,30 @@ WHERE id = $1
 	result, err := s.db.ExecContext(ctx, q, id, fileName, storageBucket, storagePath, sha256, emailSentAt)
 	if err != nil {
 		return fmt.Errorf("mark generation completed: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// MarkGenerationEmailSent sets email_sent_at for a completed generation (e.g. after successful send).
+func (s *Store) MarkGenerationEmailSent(ctx context.Context, id uuid.UUID, sentAt time.Time) error {
+	if sentAt.IsZero() {
+		sentAt = time.Now().UTC()
+	}
+	const q = `
+UPDATE milestone_generations
+SET email_sent_at = $2
+WHERE id = $1 AND status = 'completed'
+`
+	result, err := s.db.ExecContext(ctx, q, id, sentAt)
+	if err != nil {
+		return fmt.Errorf("mark generation email sent: %w", err)
 	}
 	n, err := result.RowsAffected()
 	if err != nil {
@@ -256,4 +301,40 @@ LIMIT 1
 		return MilestoneGenerationRow{}, err
 	}
 	return row, nil
+}
+
+const pollerStateID = "default"
+
+// GetPollerLastPolledAt returns the stored watermark for ClickUp date_updated_gt filtering.
+// If the row is missing, returns (epoch, nil) so callers can treat it as first-run.
+func (s *Store) GetPollerLastPolledAt(ctx context.Context) (time.Time, error) {
+	const q = `SELECT last_polled_at FROM milestone_poller_state WHERE id = $1`
+	var t time.Time
+	err := s.db.QueryRowContext(ctx, q, pollerStateID).Scan(&t)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Unix(0, 0).UTC(), nil
+	}
+	if err != nil {
+		return time.Time{}, fmt.Errorf("get poller watermark: %w", err)
+	}
+	return t.UTC(), nil
+}
+
+// SetPollerLastPolledAt upserts the poller watermark (typically time.Now() at end of a cycle).
+func (s *Store) SetPollerLastPolledAt(ctx context.Context, at time.Time) error {
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	const q = `
+INSERT INTO milestone_poller_state (id, last_polled_at, updated_at)
+VALUES ($1, $2, now())
+ON CONFLICT (id) DO UPDATE SET
+    last_polled_at = EXCLUDED.last_polled_at,
+    updated_at = now()
+`
+	_, err := s.db.ExecContext(ctx, q, pollerStateID, at.UTC())
+	if err != nil {
+		return fmt.Errorf("set poller watermark: %w", err)
+	}
+	return nil
 }

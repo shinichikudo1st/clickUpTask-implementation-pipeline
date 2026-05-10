@@ -229,6 +229,72 @@ func TestStore_MarkGenerationCompleted_noRows(t *testing.T) {
 	}
 }
 
+func TestStore_MarkGenerationEmailSent_ok(t *testing.T) {
+	t.Parallel()
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	store := NewStore(sqlDB)
+
+	id := uuid.MustParse("66666666-6666-6666-6666-666666666666")
+	mock.ExpectExec("UPDATE milestone_generations").
+		WithArgs(id, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	err = store.MarkGenerationEmailSent(context.Background(), id, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStore_MarkGenerationProcessing_ok(t *testing.T) {
+	t.Parallel()
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	store := NewStore(sqlDB)
+
+	id := uuid.MustParse("88888888-8888-8888-8888-888888888888")
+	mock.ExpectExec("UPDATE milestone_generations").
+		WithArgs(id).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	err = store.MarkGenerationProcessing(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStore_MarkGenerationEmailSent_noRows(t *testing.T) {
+	t.Parallel()
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	store := NewStore(sqlDB)
+
+	id := uuid.MustParse("77777777-7777-7777-7777-777777777777")
+	mock.ExpectExec("UPDATE milestone_generations").
+		WithArgs(id, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	err = store.MarkGenerationEmailSent(context.Background(), id, time.Now().UTC())
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("want ErrNoRows got %v", err)
+	}
+}
+
 func TestStore_LatestGenerationByTaskID_emptyArg(t *testing.T) {
 	t.Parallel()
 	sqlDB, _, err := sqlmock.New()
@@ -241,5 +307,40 @@ func TestStore_LatestGenerationByTaskID_emptyArg(t *testing.T) {
 	_, err = store.LatestGenerationByTaskID(context.Background(), "")
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestStore_pollerWatermark_getSet(t *testing.T) {
+	t.Parallel()
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	store := NewStore(sqlDB)
+
+	ts := time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC)
+	mock.ExpectQuery(`SELECT last_polled_at FROM milestone_poller_state WHERE id = \$1`).
+		WithArgs("default").
+		WillReturnRows(sqlmock.NewRows([]string{"last_polled_at"}).AddRow(ts))
+
+	got, err := store.GetPollerLastPolledAt(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Equal(ts.UTC()) {
+		t.Fatalf("got %v", got)
+	}
+
+	next := time.Date(2026, 4, 2, 10, 0, 0, 0, time.UTC)
+	mock.ExpectExec(`INSERT INTO milestone_poller_state`).
+		WithArgs("default", next).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	if err := store.SetPollerLastPolledAt(context.Background(), next); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }

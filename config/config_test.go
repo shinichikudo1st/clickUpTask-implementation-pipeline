@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoad_MissingAPISecret(t *testing.T) {
@@ -159,6 +160,16 @@ func TestLoad_DatabaseURLRequiresSSLMode(t *testing.T) {
 	}
 }
 
+func TestLoad_ClickUpAPIBaseURLInvalidScheme(t *testing.T) {
+	t.Setenv("API_SECRET", "longenough")
+	t.Setenv("CLICKUP_API_BASE_URL", "ftp://example.com/api/v2")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestLoad_DatabaseURLAcceptRequire(t *testing.T) {
 	t.Setenv("API_SECRET", "longenough")
 	t.Setenv("DATABASE_URL", "postgres://u:p@host:5432/db?sslmode=require")
@@ -185,5 +196,101 @@ func TestLoad_TrimsWhitespace(t *testing.T) {
 	}
 	if cfg.Port != "9090" {
 		t.Fatalf("Port: %q", cfg.Port)
+	}
+}
+
+func TestLoad_InvalidStorageBackend(t *testing.T) {
+	t.Setenv("API_SECRET", "longenough")
+	t.Setenv("STORAGE_BACKEND", "s3")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "STORAGE_BACKEND") {
+		t.Fatalf("error: %v", err)
+	}
+}
+
+func TestSignedURLTTL_clamp(t *testing.T) {
+	if (&Config{SignedURLTTLSeconds: 0}).SignedURLTTL() != 900*time.Second {
+		t.Fatalf("default TTL")
+	}
+	if (&Config{SignedURLTTLSeconds: 30}).SignedURLTTL() != time.Minute {
+		t.Fatalf("min clamp")
+	}
+	if (&Config{SignedURLTTLSeconds: 9999999}).SignedURLTTL() != 604800*time.Second {
+		t.Fatalf("max clamp")
+	}
+}
+
+func TestMaxEmailAttachmentBytes(t *testing.T) {
+	if (&Config{}).MaxEmailAttachmentBytes() != 450_000 {
+		t.Fatal()
+	}
+	if (&Config{EmailMaxAttachmentBytes: 1000}).MaxEmailAttachmentBytes() != 1000 {
+		t.Fatal()
+	}
+}
+
+func TestLoad_EmailProviderInvalid(t *testing.T) {
+	t.Setenv("API_SECRET", "longenough")
+	t.Setenv("EMAIL_PROVIDER", "smtp")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "EMAIL_PROVIDER") {
+		t.Fatalf("err: %v", err)
+	}
+}
+
+func TestLoad_EmailResendMissingKey(t *testing.T) {
+	t.Setenv("API_SECRET", "longenough")
+	t.Setenv("EMAIL_PROVIDER", "resend")
+	t.Setenv("EMAIL_FROM", "a@b.c")
+	t.Setenv("EMAIL_TO", "d@e.f")
+	t.Setenv("EMAIL_API_KEY", "")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestLoad_EmailResendOK(t *testing.T) {
+	t.Setenv("API_SECRET", "longenough")
+	t.Setenv("EMAIL_PROVIDER", "resend")
+	t.Setenv("EMAIL_FROM", "a@b.c")
+	t.Setenv("EMAIL_TO", "d@e.f")
+	t.Setenv("EMAIL_API_KEY", "re_test")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EmailProvider != "resend" {
+		t.Fatal()
+	}
+}
+
+func TestLoad_pollIntervalTooSmall(t *testing.T) {
+	t.Setenv("API_SECRET", "longenough")
+	t.Setenv("CLICKUP_POLL_INTERVAL_SECONDS", "10")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestLoad_pollLookbackOutOfRange(t *testing.T) {
+	t.Setenv("API_SECRET", "longenough")
+	t.Setenv("CLICKUP_POLLER_LOOKBACK_HOURS", "0")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error")
 	}
 }

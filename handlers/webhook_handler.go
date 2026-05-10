@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/config"
 	"github.com/Apex-Suite-AI/clickup-task-implementation-pipeline/db"
@@ -16,7 +18,9 @@ const maxWebhookBodyBytes = 1 << 20
 
 // ClickUpWebhookHandler receives signed ClickUp webhooks, persists supported
 // assignment-related events to clickup_events, and returns 200 with accepted metadata.
-func ClickUpWebhookHandler(cfg *config.Config, store *db.Store) http.HandlerFunc {
+// Optional planner: when non-nil and the event row is newly inserted, runs GenerateForTask
+// asynchronously (so the HTTP response is not blocked by LLM latency).
+func ClickUpWebhookHandler(cfg *config.Config, store *db.Store, planner ...MilestonePlanner) http.HandlerFunc {
 	return func(responseWriter http.ResponseWriter, request *http.Request) {
 		if store == nil {
 			WriteJSONError(responseWriter, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "database is required for webhooks")
@@ -75,6 +79,12 @@ func ClickUpWebhookHandler(cfg *config.Config, store *db.Store) http.HandlerFunc
 
 		assigneeFilter := strings.TrimSpace(cfg.ClickUpAssigneeID)
 		if assigneeFilter != "" {
+			// When filtering to a single user, only react to assignee changes — not taskCreated
+			// (creation does not prove the task is assigned to that user yet).
+			if payload.Event == "taskCreated" {
+				writeWebhookAccepted(responseWriter, false, "assignee_scope_skip_task_created", uuid.Nil, false)
+				return
+			}
 			switch payload.Event {
 			case "taskAssigneeUpdated", "taskUpdated":
 				if !clickupwebhook.AssigneeAddMatchesUser(raw, assigneeFilter) {
@@ -103,8 +113,33 @@ func ClickUpWebhookHandler(cfg *config.Config, store *db.Store) http.HandlerFunc
 			return
 		}
 
+		if inserted && len(planner) > 0 && planner[0] != nil {
+			p := planner[0]
+			eid := eventRowID
+			tid := payload.TaskID
+			st := store
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+				defer cancel()
+				err := p.GenerateForTask(ctx, tid, false)
+				msg := sql.NullString{}
+				if err != nil {
+					msg = sql.NullString{String: truncateWebhookErr(err.Error()), Valid: true}
+				}
+				_ = st.MarkEventProcessed(ctx, eid, time.Now().UTC(), msg)
+			}()
+		}
+
 		writeWebhookAccepted(responseWriter, true, "", eventRowID, !inserted)
 	}
+}
+
+func truncateWebhookErr(s string) string {
+	const max = 8000
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "…"
 }
 
 func writeWebhookAccepted(responseWriter http.ResponseWriter, accepted bool, reason string, eventRowID uuid.UUID, duplicate bool) {
