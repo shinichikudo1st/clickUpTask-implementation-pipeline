@@ -199,6 +199,30 @@ WHERE id = $1
 	return nil
 }
 
+// MarkGenerationEmailSent sets email_sent_at for a completed generation (e.g. after successful send).
+func (s *Store) MarkGenerationEmailSent(ctx context.Context, id uuid.UUID, sentAt time.Time) error {
+	if sentAt.IsZero() {
+		sentAt = time.Now().UTC()
+	}
+	const q = `
+UPDATE milestone_generations
+SET email_sent_at = $2
+WHERE id = $1 AND status = 'completed'
+`
+	result, err := s.db.ExecContext(ctx, q, id, sentAt)
+	if err != nil {
+		return fmt.Errorf("mark generation email sent: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // MarkGenerationFailed sets status failed and error message.
 func (s *Store) MarkGenerationFailed(ctx context.Context, id uuid.UUID, message string) error {
 	const q = `

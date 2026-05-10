@@ -34,10 +34,12 @@ type Config struct {
 	LLMModel      string
 	LLMAPIBaseURL string
 
-	EmailProvider string
-	EmailAPIKey   string
-	EmailFrom     string
-	EmailTo       string
+	EmailProvider             string
+	EmailAPIKey               string
+	EmailFrom                 string
+	EmailTo                   string
+	EmailAPIBaseURL           string // optional; default https://api.resend.com for Resend
+	EmailMaxAttachmentBytes   int    // optional; max markdown bytes to attach (default 450000)
 
 	AppBaseURL string
 
@@ -77,11 +79,13 @@ func Load() (*Config, error) {
 		LLMAPIKey:            strings.TrimSpace(os.Getenv("LLM_API_KEY")),
 		LLMModel:             strings.TrimSpace(os.Getenv("LLM_MODEL")),
 		LLMAPIBaseURL:        strings.TrimSpace(os.Getenv("LLM_API_BASE_URL")),
-		EmailProvider:        strings.TrimSpace(os.Getenv("EMAIL_PROVIDER")),
-		EmailAPIKey:          strings.TrimSpace(os.Getenv("EMAIL_API_KEY")),
-		EmailFrom:            strings.TrimSpace(os.Getenv("EMAIL_FROM")),
-		EmailTo:              strings.TrimSpace(os.Getenv("EMAIL_TO")),
-		AppBaseURL:           strings.TrimSpace(os.Getenv("APP_BASE_URL")),
+		EmailProvider:             strings.TrimSpace(os.Getenv("EMAIL_PROVIDER")),
+		EmailAPIKey:               strings.TrimSpace(os.Getenv("EMAIL_API_KEY")),
+		EmailFrom:                 strings.TrimSpace(os.Getenv("EMAIL_FROM")),
+		EmailTo:                   strings.TrimSpace(os.Getenv("EMAIL_TO")),
+		EmailAPIBaseURL:           strings.TrimSpace(os.Getenv("EMAIL_API_BASE_URL")),
+		EmailMaxAttachmentBytes:   intFromEnv("EMAIL_MAX_ATTACHMENT_BYTES", 0),
+		AppBaseURL:                strings.TrimSpace(os.Getenv("APP_BASE_URL")),
 		StorageBackend:       strings.TrimSpace(os.Getenv("STORAGE_BACKEND")),
 		StorageLocalDir:      strings.TrimSpace(os.Getenv("STORAGE_LOCAL_DIR")),
 		SignedURLTTLSeconds:  intFromEnv("SIGNED_URL_TTL_SECONDS", 0),
@@ -145,7 +149,41 @@ func Load() (*Config, error) {
 		}
 	}
 
+	if err := validateEmailConfig(cfg); err != nil {
+		return nil, err
+	}
+
+	if cfg.EmailAPIBaseURL != "" {
+		if err := validateHTTPURL("EMAIL_API_BASE_URL", cfg.EmailAPIBaseURL); err != nil {
+			return nil, err
+		}
+	}
+
 	return cfg, nil
+}
+
+func validateEmailConfig(cfg *Config) error {
+	p := strings.ToLower(strings.TrimSpace(cfg.EmailProvider))
+	if p == "" {
+		return nil
+	}
+	switch p {
+	case "resend", "none", "noop":
+	default:
+		return fmt.Errorf("EMAIL_PROVIDER must be resend, none, or noop, got %q", cfg.EmailProvider)
+	}
+	if p == "resend" {
+		if cfg.EmailAPIKey == "" {
+			return errors.New("EMAIL_PROVIDER=resend requires EMAIL_API_KEY")
+		}
+		if cfg.EmailFrom == "" {
+			return errors.New("EMAIL_PROVIDER=resend requires EMAIL_FROM")
+		}
+		if cfg.EmailTo == "" {
+			return errors.New("EMAIL_PROVIDER=resend requires EMAIL_TO")
+		}
+	}
+	return nil
 }
 
 func intFromEnv(key string, defaultVal int) int {
@@ -166,6 +204,18 @@ func validateLocalStorageDir(dir string) error {
 		return errors.New("STORAGE_LOCAL_DIR must not contain '..'")
 	}
 	return nil
+}
+
+// MaxEmailAttachmentBytes caps markdown attachment size; larger bodies use download link only.
+func (c *Config) MaxEmailAttachmentBytes() int {
+	if c == nil || c.EmailMaxAttachmentBytes <= 0 {
+		return 450_000
+	}
+	const maxCap = 10_000_000
+	if c.EmailMaxAttachmentBytes > maxCap {
+		return maxCap
+	}
+	return c.EmailMaxAttachmentBytes
 }
 
 // SignedURLTTL returns a bounded TTL for storage signed URLs (default 1h, min 1m, max 7d).

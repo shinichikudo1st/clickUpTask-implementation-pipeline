@@ -2,7 +2,7 @@
 
 Go service that turns new ClickUp assignments into ApexSuite-style milestone `.md` plans, persists metadata (Supabase), and emails the result. See `../ClickUpMilestonePlannerMilestone.md` for the full plan.
 
-## Phase 0–6 (current)
+## Phase 0–7 (current)
 
 - **Phase 0:** Chi router, `GET /v1/health`, repo layout, Docker, CI.
 - **Phase 1:** `config.Load()` (godotenv + validation), structured JSON request logs (with request ID), JSON panic recovery, ApexSuite response helpers, `404` / `405` handlers, graceful shutdown.
@@ -11,6 +11,7 @@ Go service that turns new ClickUp assignments into ApexSuite-style milestone `.m
 - **Phase 4:** `services.ClickUpClient` — `GetTask` / `GetTaskComments` against ClickUp API v2 (`CLICKUP_API_TOKEN`, optional `CLICKUP_API_BASE_URL`), 30s HTTP timeout, maps 401/403/404/429 to `ClickUpHTTPError`, normalizes to `models.TaskContext`.
 - **Phase 5:** `services.Generator` + `OpenAIGenerator` — embedded prompt (`services/prompts/milestone_prompt.md`), OpenAI Chat Completions (`LLM_API_KEY`, `LLM_MODEL`, optional `LLM_PROVIDER=openai`, optional `LLM_API_BASE_URL`), post-process (CRLF normalize, strip optional ` ```markdown ` fences), section + secret heuristics validation, SHA-256 via `internal/checksum`, filename `{taskId}-{slug}-milestone.md` (`internal/slug`).
 - **Phase 6:** `services/storage` — `BlobStore` (`Upload` / `Download` / `SignedDownloadURL`), `SupabaseBlobStore` (Storage REST, `text/markdown`, `x-upsert`), `LocalBlobStore` (under `STORAGE_LOCAL_DIR`), `NewFromConfig`, `PersistMilestone` (upload then `MarkGenerationCompleted`; upload errors call `MarkGenerationFailed`). Bucket defaults to **`milestone-plans`** when `SUPABASE_STORAGE_BUCKET` is unset. Signed URL TTL: `SIGNED_URL_TTL_SECONDS` (default 3600, clamped 60–604800).
+- **Phase 7:** `services/email` — `EmailService`, **Resend** (`EMAIL_PROVIDER=resend`, `EMAIL_API_KEY`, `EMAIL_FROM`, `EMAIL_TO`, optional `EMAIL_API_BASE_URL`, optional `EMAIL_MAX_ATTACHMENT_BYTES` default 450000). Small markdown is **attached** as `text/markdown`; larger bodies require **`DownloadURL`** in the payload (link in HTML + text). `SendWithRetry` (3 attempts, capped backoff), `DeliverMilestoneEmail` → `MarkGenerationEmailSent`. Empty / `none` / `noop` provider uses **`NoopEmailService`**. Orchestration calls this in **Phase 8**.
 
 ### Supabase Storage bucket (Phase 6)
 
@@ -63,6 +64,18 @@ go run ./cmd/smoke-llm -clickup-task YOUR_TASK_ID -dump-context > task-context.j
 ```
 
 Metadata (model, filename, sha256) is printed to **stderr**; the markdown body goes to **stdout** unless `-out` is set.
+
+### Smoke test email (Phase 7 / Resend)
+
+Requires **`EMAIL_PROVIDER=resend`** plus **`EMAIL_API_KEY`**, **`EMAIL_FROM`**, **`EMAIL_TO`** (verified sending domain in Resend).
+
+```bash
+go run ./cmd/smoke-email -dry-run
+go run ./cmd/smoke-email
+go run ./cmd/smoke-email -markdown path/to/small.md
+```
+
+`-dry-run` only validates config and payload shape (no API call). A successful run prints to **stderr**; check **EMAIL_TO** inbox and Resend **Logs**.
 
 ## Run locally
 

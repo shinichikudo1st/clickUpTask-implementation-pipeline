@@ -223,3 +223,54 @@ func TestSignedURLTTL_clamp(t *testing.T) {
 		t.Fatalf("max clamp")
 	}
 }
+
+func TestMaxEmailAttachmentBytes(t *testing.T) {
+	if (&Config{}).MaxEmailAttachmentBytes() != 450_000 {
+		t.Fatal()
+	}
+	if (&Config{EmailMaxAttachmentBytes: 1000}).MaxEmailAttachmentBytes() != 1000 {
+		t.Fatal()
+	}
+}
+
+func TestLoad_EmailProviderInvalid(t *testing.T) {
+	t.Setenv("API_SECRET", "longenough")
+	t.Setenv("EMAIL_PROVIDER", "smtp")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "EMAIL_PROVIDER") {
+		t.Fatalf("err: %v", err)
+	}
+}
+
+func TestLoad_EmailResendMissingKey(t *testing.T) {
+	t.Setenv("API_SECRET", "longenough")
+	t.Setenv("EMAIL_PROVIDER", "resend")
+	t.Setenv("EMAIL_FROM", "a@b.c")
+	t.Setenv("EMAIL_TO", "d@e.f")
+	t.Setenv("EMAIL_API_KEY", "")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestLoad_EmailResendOK(t *testing.T) {
+	t.Setenv("API_SECRET", "longenough")
+	t.Setenv("EMAIL_PROVIDER", "resend")
+	t.Setenv("EMAIL_FROM", "a@b.c")
+	t.Setenv("EMAIL_TO", "d@e.f")
+	t.Setenv("EMAIL_API_KEY", "re_test")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EmailProvider != "resend" {
+		t.Fatal()
+	}
+}
