@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -144,6 +145,15 @@ func TestClickUpWebhook_unsupportedEvent(t *testing.T) {
 	cfg := testWebhookConfig("whsec", "")
 
 	body := []byte(`{"event":"taskPriorityUpdated","webhook_id":"w","task_id":"t1","history_items":[{"id":"h1"}]}`)
+	newID := uuid.MustParse("cccccccc-cccc-cccc-cccc-cccccccccccc")
+
+	mock.ExpectQuery("INSERT INTO clickup_events").
+		WithArgs("w:h1", sqlmock.AnyArg(), "taskPriorityUpdated", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(newID))
+	mock.ExpectExec("UPDATE clickup_events").
+		WithArgs(newID, sqlmock.AnyArg(), sql.NullString{String: "unsupported_event", Valid: true}).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
 	recorder := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/webhooks/clickup", bytes.NewReader(body))
 	req.Header.Set("X-Signature", signClickUpWebhook("whsec", body))
@@ -343,7 +353,7 @@ func TestClickUpWebhook_duplicateReplay(t *testing.T) {
 	}
 }
 
-func TestClickUpWebhook_taskCreatedSkippedWhenAssigneeFilterSet(t *testing.T) {
+func TestClickUpWebhook_taskCreatedAcceptedWhenAssigneeFilterSet(t *testing.T) {
 	t.Parallel()
 	sqlDB, mock, err := sqlmock.New()
 	if err != nil {
@@ -354,6 +364,12 @@ func TestClickUpWebhook_taskCreatedSkippedWhenAssigneeFilterSet(t *testing.T) {
 	cfg := testWebhookConfig("whsec", "184")
 
 	body := []byte(`{"event":"taskCreated","webhook_id":"w","task_id":"t1","history_items":[{"id":"h1"}]}`)
+	newID := uuid.MustParse("dddddddd-dddd-dddd-dddd-dddddddddddd")
+
+	mock.ExpectQuery("INSERT INTO clickup_events").
+		WithArgs("w:h1", sqlmock.AnyArg(), "taskCreated", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(newID))
+
 	recorder := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/webhooks/clickup", bytes.NewReader(body))
 	req.Header.Set("X-Signature", signClickUpWebhook("whsec", body))
@@ -372,7 +388,7 @@ func TestClickUpWebhook_taskCreatedSkippedWhenAssigneeFilterSet(t *testing.T) {
 	if err := json.NewDecoder(recorder.Body).Decode(&env); err != nil {
 		t.Fatal(err)
 	}
-	if env.Data.Accepted || env.Data.Reason != "assignee_scope_skip_task_created" {
+	if !env.Data.Accepted || env.Data.Reason != "" {
 		t.Fatalf("data: %+v", env.Data)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -391,6 +407,15 @@ func TestClickUpWebhook_assigneeFilterRejects(t *testing.T) {
 	cfg := testWebhookConfig("whsec", "999")
 
 	body := []byte(`{"event":"taskAssigneeUpdated","webhook_id":"w","task_id":"t1","history_items":[{"id":"h1","field":"assignee_add","after":{"id":184}}]}`)
+	newID := uuid.MustParse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
+
+	mock.ExpectQuery("INSERT INTO clickup_events").
+		WithArgs("w:h1", sqlmock.AnyArg(), "taskAssigneeUpdated", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(newID))
+	mock.ExpectExec("UPDATE clickup_events").
+		WithArgs(newID, sqlmock.AnyArg(), sql.NullString{String: "assignee_filter", Valid: true}).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
 	recorder := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/webhooks/clickup", bytes.NewReader(body))
 	req.Header.Set("X-Signature", signClickUpWebhook("whsec", body))

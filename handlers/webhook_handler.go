@@ -16,10 +16,10 @@ import (
 
 const maxWebhookBodyBytes = 1 << 20
 
-// ClickUpWebhookHandler receives signed ClickUp webhooks, persists supported
-// assignment-related events to clickup_events, and returns 200 with accepted metadata.
-// Optional planner: when non-nil and the event row is newly inserted, runs GenerateForTask
-// asynchronously (so the HTTP response is not blocked by LLM latency).
+// ClickUpWebhookHandler receives signed ClickUp webhooks, persists valid events
+// to clickup_events, and returns accepted metadata. Optional planner: when non-nil
+// and the event row is newly inserted, assignment-related events run GenerateForTask
+// asynchronously so the HTTP response is not blocked by LLM latency.
 func ClickUpWebhookHandler(cfg *config.Config, store *db.Store, planner ...MilestonePlanner) http.HandlerFunc {
 	return func(responseWriter http.ResponseWriter, request *http.Request) {
 		if store == nil {
@@ -62,9 +62,21 @@ func ClickUpWebhookHandler(cfg *config.Config, store *db.Store, planner ...Miles
 			WriteJSONError(responseWriter, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
 			return
 		}
+		dedupeKey, err := clickupwebhook.DedupeEventKey(raw)
+		if err != nil {
+			WriteJSONError(responseWriter, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+			return
+		}
+
+		eventRowID, inserted, err := persistWebhookEvent(request.Context(), store, payload, raw, dedupeKey)
+		if err != nil {
+			WriteJSONError(responseWriter, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to persist event")
+			return
+		}
 
 		if payload.TaskID == "" {
-			writeWebhookAccepted(responseWriter, false, "missing_task_id", uuid.Nil, false)
+			markWebhookSkipped(request.Context(), store, eventRowID, inserted, "missing_task_id")
+			writeWebhookAccepted(responseWriter, false, "missing_task_id", eventRowID, !inserted)
 			return
 		}
 
@@ -73,44 +85,23 @@ func ClickUpWebhookHandler(cfg *config.Config, store *db.Store, planner ...Miles
 			related = false
 		}
 		if !related {
-			writeWebhookAccepted(responseWriter, false, "unsupported_event", uuid.Nil, false)
+			markWebhookSkipped(request.Context(), store, eventRowID, inserted, "unsupported_event")
+			writeWebhookAccepted(responseWriter, false, "unsupported_event", eventRowID, !inserted)
 			return
 		}
 
 		assigneeFilter := strings.TrimSpace(cfg.ClickUpAssigneeID)
 		if assigneeFilter != "" {
-			// When filtering to a single user, only react to assignee changes — not taskCreated
-			// (creation does not prove the task is assigned to that user yet).
-			if payload.Event == "taskCreated" {
-				writeWebhookAccepted(responseWriter, false, "assignee_scope_skip_task_created", uuid.Nil, false)
-				return
-			}
+			// taskCreated payloads do not always include enough assignee detail. Let the
+			// planner fetch the full task and enforce the configured assignee there.
 			switch payload.Event {
 			case "taskAssigneeUpdated", "taskUpdated":
 				if !clickupwebhook.AssigneeAddMatchesUser(raw, assigneeFilter) {
-					writeWebhookAccepted(responseWriter, false, "assignee_filter", uuid.Nil, false)
+					markWebhookSkipped(request.Context(), store, eventRowID, inserted, "assignee_filter")
+					writeWebhookAccepted(responseWriter, false, "assignee_filter", eventRowID, !inserted)
 					return
 				}
 			}
-		}
-
-		dedupeKey, err := clickupwebhook.DedupeEventKey(raw)
-		if err != nil {
-			WriteJSONError(responseWriter, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
-			return
-		}
-
-		row := db.ClickUpEventRow{
-			EventID:       sql.NullString{String: dedupeKey, Valid: true},
-			ClickUpTaskID: sql.NullString{String: payload.TaskID, Valid: true},
-			EventType:     payload.Event,
-			PayloadJSON:   raw,
-		}
-
-		eventRowID, inserted, err := store.InsertClickUpEvent(request.Context(), row)
-		if err != nil {
-			WriteJSONError(responseWriter, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to persist event")
-			return
 		}
 
 		if inserted && len(planner) > 0 && planner[0] != nil {
@@ -134,26 +125,45 @@ func ClickUpWebhookHandler(cfg *config.Config, store *db.Store, planner ...Miles
 	}
 }
 
+func persistWebhookEvent(ctx context.Context, store *db.Store, payload clickupwebhook.Payload, raw []byte, dedupeKey string) (uuid.UUID, bool, error) {
+	taskID := sql.NullString{}
+	if strings.TrimSpace(payload.TaskID) != "" {
+		taskID = sql.NullString{String: payload.TaskID, Valid: true}
+	}
+	row := db.ClickUpEventRow{
+		EventID:       sql.NullString{String: dedupeKey, Valid: true},
+		ClickUpTaskID: taskID,
+		EventType:     payload.Event,
+		PayloadJSON:   raw,
+	}
+	return store.InsertClickUpEvent(ctx, row)
+}
+
+func markWebhookSkipped(ctx context.Context, store *db.Store, eventRowID uuid.UUID, inserted bool, reason string) {
+	if store == nil || eventRowID == uuid.Nil || !inserted {
+		return
+	}
+	_ = store.MarkEventProcessed(ctx, eventRowID, time.Now().UTC(), sql.NullString{String: reason, Valid: true})
+}
+
 func truncateWebhookErr(s string) string {
 	const max = 8000
 	if len(s) <= max {
 		return s
 	}
-	return s[:max] + "…"
+	return s[:max] + "..."
 }
 
 func writeWebhookAccepted(responseWriter http.ResponseWriter, accepted bool, reason string, eventRowID uuid.UUID, duplicate bool) {
 	data := map[string]interface{}{
-		"accepted": accepted,
+		"accepted":  accepted,
+		"duplicate": duplicate,
 	}
 	if reason != "" {
 		data["reason"] = reason
 	}
-	if accepted && eventRowID != uuid.Nil {
+	if eventRowID != uuid.Nil {
 		data["event_row_id"] = eventRowID.String()
-	}
-	if accepted {
-		data["duplicate"] = duplicate
 	}
 	WriteJSONSuccess(responseWriter, http.StatusOK, data)
 }
