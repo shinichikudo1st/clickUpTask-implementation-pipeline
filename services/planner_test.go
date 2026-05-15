@@ -55,6 +55,19 @@ func TestTaskContextToClickUpRow(t *testing.T) {
 	}
 }
 
+func TestTaskMatchesConfiguredAssignee(t *testing.T) {
+	tc := models.TaskContext{Assignees: []models.AssigneeRef{{ID: "184"}}}
+	if !taskMatchesConfiguredAssignee(&config.Config{ClickUpAssigneeID: "184"}, tc) {
+		t.Fatal("expected configured assignee to match")
+	}
+	if taskMatchesConfiguredAssignee(&config.Config{ClickUpAssigneeID: "999"}, tc) {
+		t.Fatal("expected different configured assignee not to match")
+	}
+	if !taskMatchesConfiguredAssignee(&config.Config{}, tc) {
+		t.Fatal("empty configured assignee should not filter")
+	}
+}
+
 func TestTryNewPlanner_nilStore(t *testing.T) {
 	p, err := TryNewPlanner(&config.Config{}, nil)
 	if err != nil || p != nil {

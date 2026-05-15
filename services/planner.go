@@ -107,6 +107,9 @@ func (p *Planner) GenerateForTask(ctx context.Context, taskID string, force bool
 	if err := p.store.UpsertClickUpTask(ctx, taskContextToClickUpRow(*tc)); err != nil {
 		return fmt.Errorf("planner: upsert task: %w", err)
 	}
+	if !force && !taskMatchesConfiguredAssignee(p.cfg, *tc) {
+		return fmt.Errorf("planner: task %s is not assigned to configured CLICKUP_ASSIGNEE_USER_ID", taskID)
+	}
 
 	modelRow := strings.TrimSpace(p.cfg.LLMModel)
 	if modelRow == "" {
@@ -197,6 +200,22 @@ func taskContextToClickUpRow(tc models.TaskContext) db.ClickUpTaskRow {
 		row.AssigneeEmail = sql.NullString{String: tc.Assignees[0].Email, Valid: tc.Assignees[0].Email != ""}
 	}
 	return row
+}
+
+func taskMatchesConfiguredAssignee(cfg *config.Config, tc models.TaskContext) bool {
+	if cfg == nil {
+		return true
+	}
+	want := strings.TrimSpace(cfg.ClickUpAssigneeID)
+	if want == "" {
+		return true
+	}
+	for _, a := range tc.Assignees {
+		if strings.TrimSpace(a.ID) == want {
+			return true
+		}
+	}
+	return false
 }
 
 func truncatePlannerMsg(s string, max int) string {
