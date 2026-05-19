@@ -1,6 +1,6 @@
 # clickUpTask-implementation-pipeline
 
-Go service that turns new ClickUp assignments into ApexSuite-style milestone `.md` plans, persists metadata (Supabase), and emails the result.
+Go service that turns new ClickUp assignments into detailed milestone `.md` plans, persists metadata (Supabase), and emails the result.
 
 ## Current Capabilities
 
